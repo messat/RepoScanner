@@ -8,6 +8,10 @@
   <ItemGroup>
     <!-- Generic Host: configuration, dependency injection and logging -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <!-- Plugs Serilog into the host as the logger behind ILogger<T> -->
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <!-- Serilog output to the console (stdout), which Container Apps collects -->
+    <PackageReference Include="Serilog.Sinks.Console" />
   </ItemGroup>
 
   <!-- Scanner uses Core's types and Data's database access -->

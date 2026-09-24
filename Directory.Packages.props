@@ -14,6 +14,12 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
   </ItemGroup>
 
+  <!-- Logging -->
+  <ItemGroup>
+    <PackageVersion Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
+  </ItemGroup>
+
   <!-- Testing -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
