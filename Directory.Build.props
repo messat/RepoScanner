@@ -1,0 +1,25 @@
+<Project>
+
+  <!--
+    Shared build settings. MSBuild imports this file automatically into every
+    project below this folder (src/ and tests/). A project can override a value
+    by setting it again in its own .csproj, so do not repeat these there.
+  -->
+  <PropertyGroup>
+    <!-- Every project targets .NET 10 (LTS) -->
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!-- Compiler warns when a value might be null and is not handled -->
+    <Nullable>enable</Nullable>
+
+    <!-- Every file must declare its own using directives -->
+    <ImplicitUsings>disable</ImplicitUsings>
+
+    <!-- Any compiler warning fails the build (Definition of Done: zero warnings) -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Apply the code style rules in .editorconfig during dotnet build, not only in the IDE -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+</Project>
