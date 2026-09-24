@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -19,13 +21,54 @@ namespace RepoScanner.Scanner.Tests
             "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true"
         };
 
-        // Runs the real host end to end. Exit codes for failures (1) and invalid config (2) arrive in task 5.
+        // Queue settings with the required Name missing
+        private static readonly string[] ArgsWithoutQueueName =
+        {
+            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true"
+        };
+
         [Test]
         public async Task Main_WithValidQueueSettings_ReturnsZero()
         {
             int exitCode = await Program.Main(ValidArgs);
 
             Assert.That(exitCode, Is.EqualTo(0));
+        }
+
+        // Issue 1 acceptance criterion: a missing Queue:Name exits 2
+        [Test]
+        public async Task Main_WithoutQueueName_ReturnsTwo()
+        {
+            int exitCode = await Program.Main(ArgsWithoutQueueName);
+
+            Assert.That(exitCode, Is.EqualTo(2));
+        }
+
+        [Test]
+        public async Task Main_WithoutQueueName_LogsClearMessageWithoutStackTrace()
+        {
+            string output = await CaptureConsoleAsync(() => Program.Main(ArgsWithoutQueueName));
+
+            Assert.That(output, Does.Contain("Invalid configuration"));
+            Assert.That(output, Does.Contain("The Name field is required."));
+            Assert.That(output, Does.Not.Contain("   at "), "A configuration error should not print a stack trace");
+        }
+
+        [Test]
+        public async Task RunAsync_WhenTheRunFails_ReturnsOne()
+        {
+            int exitCode = await Program.RunAsync(ValidArgs, services => services.AddHostedService<FailingService>());
+
+            Assert.That(exitCode, Is.EqualTo(1));
+        }
+
+        [Test]
+        public async Task RunAsync_WhenTheRunFails_LogsTheError()
+        {
+            string output = await CaptureConsoleAsync(() => Program.RunAsync(ValidArgs, services => services.AddHostedService<FailingService>()));
+
+            Assert.That(output, Does.Contain("Scanner failed"));
+            Assert.That(output, Does.Contain("Simulated failure"));
         }
 
         [Test]
@@ -44,14 +87,48 @@ namespace RepoScanner.Scanner.Tests
         [Test]
         public void StartAsync_WithoutQueueName_ThrowsOptionsValidationException()
         {
-            string[] args = { "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true" };
-            HostApplicationBuilder builder = Program.CreateBuilder(args);
+            HostApplicationBuilder builder = Program.CreateBuilder(ArgsWithoutQueueName);
 
             using (IHost host = builder.Build())
             {
                 OptionsValidationException? exception = Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
 
                 Assert.That(exception?.Message, Does.Contain("Name"));
+            }
+        }
+
+        // A service that throws as soon as the host starts it, to simulate an unexpected failure
+        internal sealed class FailingService : IHostedService
+        {
+            public Task StartAsync(CancellationToken cancellationToken)
+            {
+                throw new InvalidOperationException("Simulated failure");
+            }
+
+            public Task StopAsync(CancellationToken cancellationToken)
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        // Runs the given code with the console redirected, and returns everything it wrote
+        private static async Task<string> CaptureConsoleAsync(Func<Task> action)
+        {
+            TextWriter originalOut = Console.Out;
+
+            using (StringWriter output = new StringWriter())
+            {
+                Console.SetOut(output);
+                try
+                {
+                    await action();
+                }
+                finally
+                {
+                    Console.SetOut(originalOut);
+                }
+
+                return output.ToString();
             }
         }
     }

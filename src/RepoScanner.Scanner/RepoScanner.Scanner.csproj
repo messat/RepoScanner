@@ -16,6 +16,11 @@
     <PackageReference Include="Serilog.Sinks.Console" />
   </ItemGroup>
 
+  <!-- Lets the test project call internal members, such as Program.RunAsync -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="RepoScanner.Scanner.Tests" />
+  </ItemGroup>
+
   <!-- Copy the settings files next to the built app, where the host looks for them -->
   <ItemGroup>
     <None Update="appsettings*.json" CopyToOutputDirectory="PreserveNewest" />
