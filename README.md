@@ -72,6 +72,22 @@ $env:Scanner__Queue__Name = "scan-ondemand"
 
 Further settings (database, Azure DevOps, execution limits) are added with the features that use them.
 
+## Exit codes
+
+The Container Apps Job reads the exit code to decide whether an execution succeeded.
+
+| Code | Meaning |
+|---|---|
+| `0` | Success, or nothing to do |
+| `1` | Unexpected failure during the run (logged with the full exception) |
+| `2` | Invalid configuration: the scanner did not start (logged as one line listing what is wrong) |
+
+To see exit code 2 locally, run without the Development settings:
+
+```bash
+dotnet run --project src/RepoScanner.Scanner --no-launch-profile
+```
+
 ## Repository layout
 
 ```
