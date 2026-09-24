@@ -5,4 +5,10 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
+  <!-- Scanner uses Core's types and Data's database access -->
+  <ItemGroup>
+    <ProjectReference Include="..\RepoScanner.Core\RepoScanner.Core.csproj" />
+    <ProjectReference Include="..\RepoScanner.Data\RepoScanner.Data.csproj" />
+  </ItemGroup>
+
 </Project>

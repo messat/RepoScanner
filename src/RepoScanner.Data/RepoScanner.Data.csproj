@@ -2,4 +2,9 @@
 
   <!-- Shared settings (framework, nullable, usings, warnings) come from /Directory.Build.props -->
 
+  <!-- Data uses Core's types (Finding, ScanRun, ...) to store them -->
+  <ItemGroup>
+    <ProjectReference Include="..\RepoScanner.Core\RepoScanner.Core.csproj" />
+  </ItemGroup>
+
 </Project>
