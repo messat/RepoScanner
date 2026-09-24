@@ -61,8 +61,8 @@ The app checks its settings when it starts and refuses to run if any are missing
 | `Scanner:Queue:Name` | Yes | | `scan-nightly` or `scan-ondemand`. Lowercase letters, numbers and hyphens, 3 to 63 characters |
 | `Scanner:Queue:ConnectionString` | One of these two | | Local only: `UseDevelopmentStorage=true` (Azurite) |
 | `Scanner:Queue:ServiceUri` | One of these two | | Azure only, used with managed identity |
-| `Scanner:Queue:PoisonQueueName` | | `scan-poison` | Where failing messages are moved |
-| `Scanner:Queue:MaxDequeueCount` | | `3` | Attempts before a message is moved to the poison queue |
+| `Scanner:Queue:PoisonQueueName` | | `<Name>-poison` | Where failing messages are moved. One per lane, e.g. `scan-nightly-poison` (ADR-013) |
+| `Scanner:Queue:MaxDequeueCount` | | `3` | Attempts before a message is moved to the poison queue (ADR-013) |
 
 As environment variables, `:` becomes `__`, for example:
 
@@ -97,6 +97,7 @@ Directory.Packages.props  every NuGet package version, set once (Central Package
 .editorconfig             code style rules, enforced during build
 RepoScanner.sln           solution file
 docs/
+  adr/                    architecture decision records (index in docs/adr/README.md)
   images/                 diagrams used in the documentation
 src/
   RepoScanner.Core/       domain types and contracts shared by every project (no dependencies)
@@ -109,6 +110,8 @@ tests/
 ```
 
 ## Conventions
+
+The reasons behind the design are recorded as [architecture decision records](docs/adr/README.md).
 
 - Work happens on `feature/<work-item-id>-<short-name>` branches created from `develop`.
 - `develop` and `main` only change through pull requests linked to an Azure Boards work item.
