@@ -12,6 +12,7 @@
   <!-- Hosting: configuration, dependency injection and logging -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.12" />
   </ItemGroup>
 
   <!-- Logging -->

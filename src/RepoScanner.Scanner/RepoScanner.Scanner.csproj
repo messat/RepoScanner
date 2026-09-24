@@ -8,10 +8,17 @@
   <ItemGroup>
     <!-- Generic Host: configuration, dependency injection and logging -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <!-- ValidateDataAnnotations(): checks [Required], [Range] etc. on options classes -->
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
     <!-- Plugs Serilog into the host as the logger behind ILogger<T> -->
     <PackageReference Include="Serilog.Extensions.Hosting" />
     <!-- Serilog output to the console (stdout), which Container Apps collects -->
     <PackageReference Include="Serilog.Sinks.Console" />
+  </ItemGroup>
+
+  <!-- Copy the settings files next to the built app, where the host looks for them -->
+  <ItemGroup>
+    <None Update="appsettings*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Scanner uses Core's types and Data's database access -->

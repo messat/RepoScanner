@@ -1,7 +1,9 @@
+using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using RepoScanner.Scanner.Configuration;
 using Serilog;
 using Serilog.Events;
 
@@ -35,8 +37,15 @@ namespace RepoScanner.Scanner
         public static HostApplicationBuilder CreateBuilder(string[] args)
         {
             // Sets up configuration (appsettings.json, user-secrets in Development,
-            // environment variables, command line), dependency injection and default logging
-            HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+            // environment variables, command line), dependency injection and default logging.
+            // Content root is the app's own folder, so appsettings files are found wherever
+            // the app is started from (dotnet run from the repo root, or /app in the container).
+            HostApplicationBuilderSettings settings = new HostApplicationBuilderSettings
+            {
+                Args = args,
+                ContentRootPath = AppContext.BaseDirectory
+            };
+            HostApplicationBuilder builder = Host.CreateApplicationBuilder(settings);
 
             // Remove the default logging providers (Console, Debug, EventSource, EventLog):
             // Serilog is the only place logs go
@@ -51,6 +60,13 @@ namespace RepoScanner.Scanner
                 .Enrich.FromLogContext()
                 // Time, level, class name, message
                 .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}"));
+
+            // Queue settings: read from the Scanner:Queue section, checked against the rules on
+            // QueueOptions, and checked when the host starts rather than when first used
+            builder.Services.AddOptions<QueueOptions>()
+                .Bind(builder.Configuration.GetSection(QueueOptions.SectionName))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
 
             // Register the classes the host can create for us
             builder.Services.AddSingleton<ScanOrchestrator>();

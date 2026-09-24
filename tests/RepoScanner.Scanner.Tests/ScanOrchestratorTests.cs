@@ -3,7 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging.Testing;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using RepoScanner.Scanner.Configuration;
 
 namespace RepoScanner.Scanner.Tests
 {
@@ -18,7 +20,8 @@ namespace RepoScanner.Scanner.Tests
         {
             _logger = new FakeLogger<ScanOrchestrator>();
             HostingEnvironment environment = new HostingEnvironment { EnvironmentName = "Test" };
-            _orchestrator = new ScanOrchestrator(_logger, environment);
+            IOptions<QueueOptions> queueOptions = Options.Create(new QueueOptions { Name = "scan-test", ConnectionString = "UseDevelopmentStorage=true" });
+            _orchestrator = new ScanOrchestrator(_logger, environment, queueOptions);
         }
 
         [Test]
@@ -28,6 +31,15 @@ namespace RepoScanner.Scanner.Tests
 
             IReadOnlyList<FakeLogRecord> records = _logger.Collector.GetSnapshot();
             Assert.That(records[0].GetStructuredStateValue("EnvironmentName"), Is.EqualTo("Test"));
+        }
+
+        [Test]
+        public async Task RunAsync_WhenStarting_LogsQueueNameAsStructuredProperty()
+        {
+            await _orchestrator.RunAsync(CancellationToken.None);
+
+            IReadOnlyList<FakeLogRecord> records = _logger.Collector.GetSnapshot();
+            Assert.That(records[0].GetStructuredStateValue("QueueName"), Is.EqualTo("scan-test"));
         }
 
         [Test]
