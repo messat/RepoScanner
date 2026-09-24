@@ -2,6 +2,17 @@
 
   <!-- Shared settings (framework, nullable, usings, warnings) come from /Directory.Build.props -->
 
+  <ItemGroup>
+    <!-- EF Core with the SQL Server provider: the local SQL Server and Azure SQL Database both use it -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <!-- Only for the dotnet ef tool (migrations). PrivateAssets="all" stops it flowing to projects
+         that reference Data, such as Scanner and the dashboard -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
   <!-- Data uses Core's types (Finding, ScanRun, ...) to store them -->
   <ItemGroup>
     <ProjectReference Include="..\RepoScanner.Core\RepoScanner.Core.csproj" />
