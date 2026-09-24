@@ -28,6 +28,7 @@ Directory.Build.props     build settings shared by every project
 RepoScanner.sln           solution file
 src/
   RepoScanner.Core/       domain types and contracts shared by every project (no dependencies)
+  RepoScanner.Data/       EF Core database access, shared with the dashboard
   RepoScanner.Scanner/    the console app
 ```
 
