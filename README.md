@@ -27,6 +27,8 @@ RepoScanner.Scanner ──► RepoScanner.Data ──► RepoScanner.Core
 
 - .NET 10 SDK (the version is pinned in `global.json`)
 - Git
+- SQL Server installed on your machine (Express, Developer or a full edition), reached with Windows authentication. Only needed to create and use the local database; the tests do not need it
+- SQL Server Management Studio (optional), to look at the tables
 
 ## Build and run
 
@@ -42,7 +44,9 @@ dotnet run --project src/RepoScanner.Scanner
 dotnet test RepoScanner.sln
 ```
 
-`dotnet test` also measures line coverage (coverlet) and fails if Core or Scanner drop below 80%. Data's coverage is reported but not enforced. Reports are written to `tests/<project>/TestResults/coverage/coverage.cobertura.xml` (git-ignored).
+`dotnet test` also measures line coverage (coverlet) and fails if Core or Scanner drop below 80%. Data's coverage is reported but not enforced, and leaves out the generated `Migrations/` code. Reports are written to `tests/<project>/TestResults/coverage/coverage.cobertura.xml` (git-ignored).
+
+The tests need no database server: the Data tests use a new in-memory SQLite database for each test.
 
 The coverage table per project is hidden by the .NET terminal logger in an interactive terminal. To see it, and each test by name:
 
@@ -70,7 +74,55 @@ As environment variables, `:` becomes `__`, for example:
 $env:Scanner__Queue__Name = "scan-ondemand"
 ```
 
-Further settings (database, Azure DevOps, execution limits) are added with the features that use them.
+Further settings (the scanner's database connection, Azure DevOps, execution limits) are added with the features that use them. The `dotnet ef` tool already reads the database connection string: see [Database and migrations](#database-and-migrations).
+
+## Database and migrations
+
+The findings are stored in a SQL Server database called `RepoScanner`: locally, on the SQL Server installed on your machine (not in Docker, [ADR-017](docs/adr/ADR-017-everything-runs-locally-before-azure.md)); in Azure, on Azure SQL Database ([ADR-015](docs/adr/ADR-015-azure-sql-basic-in-uk-west.md)). Both use the same EF Core SQL Server provider, so only the connection string differs. The tables and the reasons for them are in the [Issue 2 design](docs/design/2026-09-24-data-model-and-persistence.md).
+
+### One-off setup
+
+1. Install the pinned `dotnet ef` tool (from `.config/dotnet-tools.json`):
+
+   ```bash
+   dotnet tool restore
+   ```
+
+2. Save the connection string as a Windows user environment variable. It uses Windows authentication, so it holds no password, and it is never stored in the repository:
+
+   ```bash
+   setx Scanner__Database__ConnectionString "Server=.\SQLEXPRESS;Database=RepoScanner;Trusted_Connection=True;TrustServerCertificate=True"
+   ```
+
+   Change `.\SQLEXPRESS` if your SQL Server has another name (the name at the top of SSMS Object Explorer; `.` means this computer). `TrustServerCertificate=True` accepts the self-signed certificate of a local SQL Server and is for local use only.
+
+3. Open a new terminal (and restart Visual Studio): programs that were already running do not see a new environment variable.
+
+### Create or update the database
+
+```bash
+dotnet ef database update --project src/RepoScanner.Data --startup-project src/RepoScanner.Data
+```
+
+The first run creates the `RepoScanner` database and its tables; later runs apply any new migrations. Do not create the database by hand: building it from the migrations alone is how we know a fresh database can always be stood up.
+
+### Change the model
+
+After changing an entity in Core or a configuration in `src/RepoScanner.Data/Configurations/`, add a migration, read the generated file, then apply it:
+
+```bash
+dotnet ef migrations add <DescriptiveName> --project src/RepoScanner.Data --startup-project src/RepoScanner.Data
+```
+
+A change that removes or renames something follows expand/contract across releases (add the new, move the code over, remove the old later), never in one deployment ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md)).
+
+### Who applies migrations
+
+- **Locally:** you, with `dotnet ef database update` as above.
+- **Azure:** only the pipeline, which generates an idempotent script with `dotnet ef migrations script --idempotent` and applies it before deploying ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md)).
+- **Never the scanner:** it has no rights to change the schema ([ADR-008](docs/adr/ADR-008-two-privilege-levels.md)), so it never calls `Migrate()` or `EnsureCreated()`.
+
+If `dotnet ef` says `Scanner__Database__ConnectionString` is not set, repeat step 2 of the setup and open a new terminal.
 
 ## Exit codes
 
@@ -95,13 +147,16 @@ global.json               pins the .NET SDK version
 Directory.Build.props     build settings shared by every project
 Directory.Packages.props  every NuGet package version, set once (Central Package Management)
 .editorconfig             code style rules, enforced during build
+.config/
+  dotnet-tools.json       pins the dotnet ef tool version
 RepoScanner.sln           solution file
 docs/
   adr/                    architecture decision records (index in docs/adr/README.md)
+  design/                 design documents, one per issue
   images/                 diagrams used in the documentation
 src/
   RepoScanner.Core/       domain types and contracts shared by every project (no dependencies)
-  RepoScanner.Data/       EF Core database access, shared with the dashboard
+  RepoScanner.Data/       EF Core database access (DbContext, Fluent API configurations, migrations), shared with the dashboard
   RepoScanner.Scanner/    the console app
 tests/
   RepoScanner.Core.Tests/     NUnit tests for Core
