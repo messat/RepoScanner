@@ -50,6 +50,28 @@ The coverage table per project is hidden by the .NET terminal logger in an inter
 dotnet test --tl:off --logger "console;verbosity=normal"
 ```
 
+## Configuration
+
+Settings are read from `appsettings.json`, then `appsettings.{Environment}.json`, then environment variables, then command-line arguments. Later sources win. `dotnet run` uses the `Development` environment (`Properties/launchSettings.json`), which points at local Azurite.
+
+The app checks its settings when it starts and refuses to run if any are missing or invalid.
+
+| Setting | Required | Default | Notes |
+|---|---|---|---|
+| `Scanner:Queue:Name` | Yes | | `scan-nightly` or `scan-ondemand`. Lowercase letters, numbers and hyphens, 3 to 63 characters |
+| `Scanner:Queue:ConnectionString` | One of these two | | Local only: `UseDevelopmentStorage=true` (Azurite) |
+| `Scanner:Queue:ServiceUri` | One of these two | | Azure only, used with managed identity |
+| `Scanner:Queue:PoisonQueueName` | | `scan-poison` | Where failing messages are moved |
+| `Scanner:Queue:MaxDequeueCount` | | `3` | Attempts before a message is moved to the poison queue |
+
+As environment variables, `:` becomes `__`, for example:
+
+```powershell
+$env:Scanner__Queue__Name = "scan-ondemand"
+```
+
+Further settings (database, Azure DevOps, execution limits) are added with the features that use them.
+
 ## Repository layout
 
 ```
