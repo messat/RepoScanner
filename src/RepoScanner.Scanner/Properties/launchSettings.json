@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "RepoScanner.Scanner": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
