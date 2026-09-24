@@ -5,6 +5,11 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Generic Host: configuration, dependency injection and logging -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
   <!-- Scanner uses Core's types and Data's database access -->
   <ItemGroup>
     <ProjectReference Include="..\RepoScanner.Core\RepoScanner.Core.csproj" />

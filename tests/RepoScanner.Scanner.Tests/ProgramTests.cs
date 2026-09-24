@@ -1,5 +1,5 @@
 using System;
-using System.IO;
+using System.Threading.Tasks;
 using NUnit.Framework;
 
 namespace RepoScanner.Scanner.Tests
@@ -7,28 +7,13 @@ namespace RepoScanner.Scanner.Tests
     [TestFixture]
     public class ProgramTests
     {
-        // Program.Main is the placeholder "Hello, World!" until the Generic Host arrives (task 4),
-        // at which point this test is replaced by host, options and exit code tests.
+        // Runs the real host end to end. Exit codes for failures (1) and invalid config (2) arrive in task 5.
         [Test]
-        public void Main_WithNoArguments_WritesHelloWorld()
+        public async Task Main_WithNoArguments_ReturnsZero()
         {
-            TextWriter originalOut = Console.Out;
+            int exitCode = await Program.Main(Array.Empty<string>());
 
-            using (StringWriter output = new StringWriter())
-            {
-                // Capture everything Main writes to the console
-                Console.SetOut(output);
-                try
-                {
-                    Program.Main(Array.Empty<string>());
-                }
-                finally
-                {
-                    Console.SetOut(originalOut);
-                }
-
-                Assert.That(output.ToString().Trim(), Is.EqualTo("Hello, World!"));
-            }
+            Assert.That(exitCode, Is.EqualTo(0));
         }
     }
 }
