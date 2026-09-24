@@ -42,6 +42,14 @@ dotnet run --project src/RepoScanner.Scanner
 dotnet test RepoScanner.sln
 ```
 
+`dotnet test` also measures line coverage (coverlet) and fails if Core or Scanner drop below 80%. Data's coverage is reported but not enforced. Reports are written to `tests/<project>/TestResults/coverage/coverage.cobertura.xml` (git-ignored).
+
+The coverage table per project is hidden by the .NET terminal logger in an interactive terminal. To see it, and each test by name:
+
+```bash
+dotnet test --tl:off --logger "console;verbosity=normal"
+```
+
 ## Repository layout
 
 ```
