@@ -38,11 +38,16 @@ dotnet build RepoScanner.sln
 dotnet run --project src/RepoScanner.Scanner
 ```
 
+```bash
+dotnet test RepoScanner.sln
+```
+
 ## Repository layout
 
 ```
 global.json               pins the .NET SDK version
 Directory.Build.props     build settings shared by every project
+Directory.Packages.props  every NuGet package version, set once (Central Package Management)
 .editorconfig             code style rules, enforced during build
 RepoScanner.sln           solution file
 docs/
@@ -51,6 +56,10 @@ src/
   RepoScanner.Core/       domain types and contracts shared by every project (no dependencies)
   RepoScanner.Data/       EF Core database access, shared with the dashboard
   RepoScanner.Scanner/    the console app
+tests/
+  RepoScanner.Core.Tests/     NUnit tests for Core
+  RepoScanner.Data.Tests/     NUnit tests for Data
+  RepoScanner.Scanner.Tests/  NUnit tests for Scanner
 ```
 
 ## Conventions
