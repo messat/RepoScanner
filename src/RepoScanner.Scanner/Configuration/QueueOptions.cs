@@ -14,7 +14,10 @@ namespace RepoScanner.Scanner.Configuration
         private const string QueueNamePattern = "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$";
         private const string QueueNameMessage = "{0} must be 3 to 63 characters of lowercase letters, numbers and hyphens.";
 
-        // scan-nightly or scan-ondemand: the queue name is configuration, not code (ADR-003)
+        // Set only when Scanner:Queue:PoisonQueueName is configured; otherwise the default below applies
+        private readonly string? _poisonQueueName;
+
+        // scan-nightly or scan-ondemand: the queue name is configuration, not code (ADR-011)
         [Required]
         [RegularExpression(QueueNamePattern, ErrorMessage = QueueNameMessage)]
         public string Name { get; init; } = string.Empty;
@@ -25,12 +28,17 @@ namespace RepoScanner.Scanner.Configuration
         // Azure only, used with DefaultAzureCredential (managed identity, ADR-007)
         public Uri? ServiceUri { get; init; }
 
-        // Where messages go after failing too many times (naming to be confirmed later)
-        [Required]
+        // Where messages go after failing too many times. Each lane has its own (ADR-013), so the
+        // default is the queue name plus "-poison": scan-nightly-poison, scan-ondemand-poison.
+        // Empty while Name is missing, so that problem is reported once, against Name.
         [RegularExpression(QueueNamePattern, ErrorMessage = QueueNameMessage)]
-        public string PoisonQueueName { get; init; } = "scan-poison";
+        public string PoisonQueueName
+        {
+            get => _poisonQueueName ?? (string.IsNullOrEmpty(Name) ? string.Empty : Name + "-poison");
+            init => _poisonQueueName = value;
+        }
 
-        // A message dequeued more times than this is moved to the poison queue
+        // A message dequeued more times than this is moved to the poison queue (ADR-013)
         [Range(1, int.MaxValue)]
         public int MaxDequeueCount { get; init; } = 3;
 
