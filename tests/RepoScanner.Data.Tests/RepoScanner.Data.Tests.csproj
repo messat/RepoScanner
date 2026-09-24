@@ -4,6 +4,10 @@
   <PropertyGroup>
     <!-- Test projects are never published as NuGet packages -->
     <IsPackable>false</IsPackable>
+
+    <!-- Coverage is still measured and reported for Data, but not enforced:
+         the 80% target applies to Core and Scanner only (Definition of Done) -->
+    <Threshold>0</Threshold>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,8 +19,8 @@
     <PackageReference Include="NUnit3TestAdapter" />
     <!-- Compile-time checks for common NUnit mistakes -->
     <PackageReference Include="NUnit.Analyzers" />
-    <!-- Collects code coverage when running dotnet test with coverage enabled -->
-    <PackageReference Include="coverlet.collector" />
+    <!-- Measures code coverage during dotnet test and fails the run below the threshold -->
+    <PackageReference Include="coverlet.msbuild" />
   </ItemGroup>
 
   <!-- The project under test -->
