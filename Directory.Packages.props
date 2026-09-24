@@ -1,0 +1,21 @@
+<Project>
+
+  <!--
+    Central Package Management. Every NuGet package version used anywhere in the
+    repo is set here, once. Each .csproj still lists the packages it uses with
+    <PackageReference Include="..." />, but without a Version attribute.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <!-- Testing -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageVersion Include="NUnit" Version="4.6.1" />
+    <PackageVersion Include="NUnit3TestAdapter" Version="6.3.0" />
+    <PackageVersion Include="NUnit.Analyzers" Version="4.15.0" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+  </ItemGroup>
+
+</Project>
