@@ -27,6 +27,7 @@ Directory.Build.props     build settings shared by every project
 .editorconfig             code style rules, enforced during build
 RepoScanner.sln           solution file
 src/
+  RepoScanner.Core/       domain types and contracts shared by every project (no dependencies)
   RepoScanner.Scanner/    the console app
 ```
 
