@@ -17,7 +17,7 @@ From Issue 2 (#7) and task #13:
 
 1. A fresh SQL Server database stands up from the migrations alone, on the local SQL Server and on Azure SQL Database.
 2. The repository round-trip tests pass.
-3. No `Migrate()` or `EnsureCreated()` call exists in Scanner or Data, and a test fails the build if one is added.
+3. No call that creates, migrates or deletes the database (`Migrate()`, `EnsureCreated()`, `EnsureDeleted()` and their variants) exists in Scanner or Data, and a test fails the build if one is added.
 
 ## Decisions
 
@@ -297,7 +297,7 @@ The repository tests belong to task #12 (with #11):
 
 Each database rule and repository method is written test first: a failing test, then the code that makes it pass.
 
-**Scanner.Tests (task #13):** a test reads every `.cs` file under `src/RepoScanner.Scanner` and `src/RepoScanner.Data` and fails if it finds a call to `Migrate`, `MigrateAsync`, `EnsureCreated` or `EnsureCreatedAsync`. Lines that are comments (starting with `//`) are ignored, so a comment explaining the rule does not trip it. It is shown failing once, with a call added on purpose, before that call is removed.
+**Scanner.Tests (task #13):** a test reads the compiled `RepoScanner.Scanner.dll` and `RepoScanner.Data.dll` with `System.Reflection.Metadata` and fails if either references a method that changes the schema: `RelationalDatabaseFacadeExtensions.Migrate` and `MigrateAsync`, `IMigrator.Migrate` and `MigrateAsync`, and `DatabaseFacade.EnsureCreated`, `EnsureCreatedAsync`, `EnsureDeleted` and `EnsureDeletedAsync`. Every method an assembly calls in another assembly is listed in its metadata, whatever the source looks like, so comments and strings cannot cause a false alarm and formatting cannot hide a call. (Agreed on 2026-09-25 in place of searching the source files.) It is shown failing once, with a call added on purpose, before that call is removed.
 
 **Coverage:** Core and Scanner stay at 80% or more; Data is reported but not enforced (ADR-021).
 
