@@ -141,6 +141,21 @@ namespace RepoScanner.Scanner.Tests.Secrets
             }
         }
 
+        // Review fix: everyday .NET, PowerShell and shell code that builds a secret from variables is not a
+        // hard-coded secret, and nor is a setting whose value is its own name (an enum constant)
+        [TestCase("string connection = $\"Server={server};Database=Orders;User ID={user};Password={password};\";")]
+        [TestCase("string connection = string.Format(\"Server={0};Database=Orders;Password={2};\", server, db, password);")]
+        [TestCase("$connection = \"Server=$server;Database=Orders;Password=$password;\"")]
+        [TestCase("git clone https://$GIT_USER:$GIT_TOKEN@git.example.com/orders.git")]
+        [TestCase("      SA_PASSWORD: $SA_PASSWORD_FROM_ENV")]
+        [TestCase("    AcquireTokenSilent: \"acquireTokenSilent\",")]
+        public async Task ScanAsync_IgnoresSecretsTakenFromVariables(string line)
+        {
+            _folder.WriteText("code.txt", line + "\n");
+
+            Assert.That(await ScanAsync(), Is.Empty);
+        }
+
         [Test]
         public async Task ScanAsync_ReturnsFindingsSortedByFileThenLine()
         {

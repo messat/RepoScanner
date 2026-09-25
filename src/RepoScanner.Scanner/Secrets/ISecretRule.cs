@@ -15,8 +15,9 @@ namespace RepoScanner.Scanner.Secrets
         // Shown on the dashboard, for example "Private key"
         string Message { get; }
 
-        // Contains a group named "secret" (SecretValue.GroupName): the part that is masked and hashed.
-        // Built with SecretRulePattern.Create, so it has the one-second match timeout.
+        // Contains a group named "secret" (SecretValue.GroupName): the part that is masked and hashed. It
+        // may also contain a group named "name" (SecretValue.NameGroupName): the setting the secret is
+        // assigned to. Built with SecretRulePattern.Create, so it has the one-second match timeout.
         Regex Pattern { get; }
     }
 }

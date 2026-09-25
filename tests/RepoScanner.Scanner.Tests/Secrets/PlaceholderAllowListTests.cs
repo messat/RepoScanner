@@ -37,6 +37,35 @@ namespace RepoScanner.Scanner.Tests.Secrets
             Assert.That(PlaceholderAllowList.IsPlaceholder(value), Is.True);
         }
 
+        // Review fix: variable references common in C#, PowerShell and shell scripts
+        [TestCase("{password}")]
+        [TestCase("{2}")]
+        [TestCase("$env:API_KEY")]
+        [TestCase("$Env:DB_PASSWORD")]
+        [TestCase("$GIT_TOKEN")]
+        [TestCase("$SA_PASSWORD_FROM_ENV")]
+        public void IsPlaceholder_ForAVariableReference_IsTrue(string value)
+        {
+            Assert.That(PlaceholderAllowList.IsPlaceholder(value), Is.True);
+        }
+
+        // Review fix: a value that only repeats the name of its setting, like Password=$password or an
+        // enum constant, is not a secret
+        [TestCase("$password", "Password")]
+        [TestCase("acquireTokenSilent", "AcquireTokenSilent")]
+        [TestCase("api-key", "ApiKey")]
+        public void IsPlaceholder_WhenTheValueIsTheSettingsOwnName_IsTrue(string value, string settingName)
+        {
+            Assert.That(PlaceholderAllowList.IsPlaceholder(value, settingName), Is.True);
+        }
+
+        [TestCase("password123", "Password")]
+        [TestCase("FAKE-secret-1234", null)]
+        public void IsPlaceholder_WhenTheValueIsNotTheSettingsOwnName_IsFalse(string value, string? settingName)
+        {
+            Assert.That(PlaceholderAllowList.IsPlaceholder(value, settingName), Is.False);
+        }
+
         [TestCase("xxxxxxxx")]
         [TestCase("********")]
         [TestCase("00000000")]
@@ -56,6 +85,8 @@ namespace RepoScanner.Scanner.Tests.Secrets
         [TestCase("yourpassword")]
         [TestCase("#{unclosed")]
         [TestCase("<>")]
+        [TestCase("{}")]
+        [TestCase("$uperSecret1")]
         public void IsPlaceholder_ForAnythingElse_IsFalse(string value)
         {
             Assert.That(PlaceholderAllowList.IsPlaceholder(value), Is.False);

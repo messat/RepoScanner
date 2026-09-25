@@ -84,7 +84,11 @@ namespace RepoScanner.Scanner.Secrets
                     Group secretGroup = match.Groups[SecretValue.GroupName];
                     string secret = SecretValue.FromMatch(match);
 
-                    if (PlaceholderAllowList.IsPlaceholder(secret))
+                    // The setting's name, for the rules that capture it (SEC003, SEC007)
+                    Group nameGroup = match.Groups[SecretValue.NameGroupName];
+                    string? settingName = nameGroup.Success ? nameGroup.Value : null;
+
+                    if (PlaceholderAllowList.IsPlaceholder(secret, settingName))
                     {
                         placeholderCount++;
                         continue;

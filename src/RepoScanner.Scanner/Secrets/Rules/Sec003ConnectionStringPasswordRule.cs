@@ -13,8 +13,9 @@ namespace RepoScanner.Scanner.Secrets.Rules
         // A key that says this is a connection string to a server
         private const string ServerKey = @"(?:Server|Data\s*Source|Host|Address)\s*=";
 
-        // The password is the value, up to ; or a quote or the end of the line
-        private const string PasswordKey = @"(?:Password|Pwd)\s*=\s*(?<secret>[^;'""\r\n]+)";
+        // The password is the value, up to ; or a quote or the end of the line. The key is captured as the
+        // setting's name, so the allow-list drops Password=$password.
+        private const string PasswordKey = @"(?<name>Password|Pwd)\s*=\s*(?<secret>[^;'""\r\n]+)";
 
         // The server usually comes first; the password can come first too
         private const string ServerFirst = @"\b" + ServerKey + Pair + "(?:" + Pair + @")*?\s*" + PasswordKey;

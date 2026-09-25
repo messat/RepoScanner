@@ -12,6 +12,10 @@ namespace RepoScanner.Scanner.Secrets
     {
         public const string GroupName = "secret";
 
+        // SEC003 and SEC007 also capture the name of the setting the secret is assigned to, so the
+        // allow-list can drop a value that only repeats it (Password=$password)
+        public const string NameGroupName = "name";
+
         public static string FromMatch(Match match)
         {
             string value = match.Groups[GroupName].Value
