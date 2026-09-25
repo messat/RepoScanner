@@ -1,13 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace RepoScanner.Scanner.Files
 {
     // Lists the files a scanner should read under a folder, leaving out what nobody wrote by hand:
-    // tool folders, large and binary files, links, folders marked as excluded, and files that cannot be
-    // opened (Issue 3 design, Skip rules). Shared by the secret, package and code-pattern scanners.
+    // tool folders, large and binary files, links, folders marked as excluded, and files and folders that
+    // cannot be read (Issue 3 design, Skip rules). It also reads the files, so every scanner handles a
+    // file that cannot be read the same way. Shared by the secret, package and code-pattern scanners.
     public sealed class RepositoryFileWalker
     {
         // A folder holding this file is skipped, with everything below it, when it is below the scan
@@ -46,11 +50,32 @@ namespace RepoScanner.Scanner.Files
 
             _logger.LogInformation(
                 "Found {FileCount} files to scan under {RootPath}; skipped {FolderCount} tool folders, {ExcludedCount} excluded folders, " +
-                "{LinkCount} links, {LargeCount} large files, {BinaryCount} binary files and {UnreadableCount} unreadable files",
-                files.Count, root.FullName, skipped.ToolFolders, skipped.ExcludedFolders, skipped.Links,
+                "{UnreadableFolderCount} unreadable folders, {LinkCount} links, {LargeCount} large files, {BinaryCount} binary files " +
+                "and {UnreadableCount} unreadable files",
+                files.Count, root.FullName, skipped.ToolFolders, skipped.ExcludedFolders, skipped.UnreadableFolders, skipped.Links,
                 skipped.LargeFiles, skipped.BinaryFiles, skipped.UnreadableFiles);
 
             return files;
+        }
+
+        // The file's text, or null when it cannot be read now: it may have been locked or deleted since the
+        // walk listed it, and one such file must not stop the scan. UTF-8, honouring a byte order mark;
+        // bytes that are not valid UTF-8 become U+FFFD rather than failing, so the rest is still scanned.
+        public async Task<string?> TryReadTextAsync(RepositoryFile file, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using (FileStream stream = OpenShared(file.FullPath))
+                using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+                {
+                    return await reader.ReadToEndAsync(cancellationToken);
+                }
+            }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+            {
+                _logger.LogWarning("Skipped {FilePath}: it could not be read ({Reason})", file.RelativePath, exception.Message);
+                return null;
+            }
         }
 
         private void AddFiles(DirectoryInfo folder, string rootPath, bool isRoot, List<RepositoryFile> files, SkipCounts skipped)
@@ -62,9 +87,25 @@ namespace RepoScanner.Scanner.Files
                 return;
             }
 
-            foreach (FileInfo file in folder.EnumerateFiles())
+            FileInfo[] folderFiles;
+            DirectoryInfo[] subfolders;
+            try
             {
-                string relativePath = Path.GetRelativePath(rootPath, file.FullName).Replace(Path.DirectorySeparatorChar, '/');
+                // Listed in one go, so a folder that cannot be listed (no permission, or deleted during the
+                // walk) is caught here and skipped, rather than stopping the whole scan
+                folderFiles = folder.GetFiles();
+                subfolders = folder.GetDirectories();
+            }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+            {
+                _logger.LogWarning("Skipped folder {FolderPath}: it could not be listed ({Reason})", RelativePathOf(rootPath, folder.FullName), exception.Message);
+                skipped.UnreadableFolders++;
+                return;
+            }
+
+            foreach (FileInfo file in folderFiles)
+            {
+                string relativePath = RelativePathOf(rootPath, file.FullName);
 
                 if (file.LinkTarget != null)
                 {
@@ -93,7 +134,7 @@ namespace RepoScanner.Scanner.Files
                 }
             }
 
-            foreach (DirectoryInfo child in folder.EnumerateDirectories())
+            foreach (DirectoryInfo child in subfolders)
             {
                 if (child.LinkTarget != null)
                 {
@@ -110,12 +151,25 @@ namespace RepoScanner.Scanner.Files
             }
         }
 
+        // With / between folders, as a finding records it
+        private static string RelativePathOf(string rootPath, string fullPath)
+        {
+            return Path.GetRelativePath(rootPath, fullPath).Replace(Path.DirectorySeparatorChar, '/');
+        }
+
+        // Read-only, but letting other programs go on writing to or deleting the file, so a log file an
+        // application has open is still scanned. Only a file another program has locked for itself fails.
+        private static FileStream OpenShared(string path)
+        {
+            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        }
+
         // True for a binary file, false for text, and null when the file cannot be opened
         private bool? StartsLikeABinaryFile(FileInfo file, string relativePath)
         {
             try
             {
-                using (FileStream stream = file.OpenRead())
+                using (FileStream stream = OpenShared(file.FullName))
                 {
                     byte[] start = new byte[BinaryCheckByteCount];
                     int read = stream.ReadAtLeast(start, BinaryCheckByteCount, throwOnEndOfStream: false);
@@ -136,6 +190,8 @@ namespace RepoScanner.Scanner.Files
             public int ToolFolders { get; set; }
 
             public int ExcludedFolders { get; set; }
+
+            public int UnreadableFolders { get; set; }
 
             public int Links { get; set; }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -180,6 +181,40 @@ namespace RepoScanner.Scanner.Tests.Secrets
             RawFinding finding = (await ScanAsync()).Single();
 
             Assert.That(finding.LineNumber, Is.EqualTo(2));
+        }
+
+        // Review fix: a file that passes the walk but cannot be read in full (another program has locked
+        // part of it after the first 8,000 bytes) is skipped with a warning, and the rest is still scanned.
+        // Only Windows makes other readers respect such a lock.
+        [Test]
+        public async Task ScanAsync_WhenAFileCannotBeReadInFull_SkipsItWithAWarningAndScansTheRest()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                string lockedPath = _folder.WriteBytes("big.txt", Encoding.ASCII.GetBytes(new string('a', 20000)));
+                _folder.WriteText("publish.ps1", "--api-key " + NuGetKey + "\n");
+                FakeLogger<RepositoryFileWalker> walkerLogger = new FakeLogger<RepositoryFileWalker>();
+                SecretScanner scanner = new SecretScanner(new RepositoryFileWalker(walkerLogger), AllSecretRules.Create(), _logger);
+
+                IReadOnlyList<RawFinding> findings;
+                using (FileStream holder = new FileStream(lockedPath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                {
+                    holder.Lock(10000, 1000);
+                    findings = await scanner.ScanAsync(_folder.FullPath, CancellationToken.None);
+                }
+
+                FakeLogRecord warning = walkerLogger.Collector.GetSnapshot().Single(record => record.Level == LogLevel.Warning);
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(findings.Select(finding => finding.FilePath), Is.EqualTo(new string[] { "publish.ps1" }));
+                    Assert.That(warning.Message, Does.Contain("big.txt"));
+                    Assert.That(_logger.LatestRecord.GetStructuredStateValue("UnreadableCount"), Is.EqualTo("1"));
+                }
+            }
+            else
+            {
+                Assert.Ignore("Only Windows makes other readers respect a lock on part of a file");
+            }
         }
 
         [Test]

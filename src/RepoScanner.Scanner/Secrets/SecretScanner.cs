@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,14 +37,21 @@ namespace RepoScanner.Scanner.Secrets
             IReadOnlyList<RepositoryFile> files = _walker.GetFiles(rootPath);
             List<RawFinding> findings = new List<RawFinding>();
             int placeholderCount = 0;
+            int unreadableCount = 0;
 
             foreach (RepositoryFile file in files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // UTF-8, honouring a byte order mark. Bytes that are not valid UTF-8 become U+FFFD rather
-                // than failing, so the rest of the file is still scanned.
-                string text = await File.ReadAllTextAsync(file.FullPath, Encoding.UTF8, cancellationToken);
+                // Null when the file cannot be read now (locked or deleted since the walk); the walker has
+                // logged a warning naming it, and the rest of the folder is still scanned
+                string? text = await _walker.TryReadTextAsync(file, cancellationToken);
+                if (text == null)
+                {
+                    unreadableCount++;
+                    continue;
+                }
+
                 placeholderCount += AddFindings(file.RelativePath, text, findings);
             }
 
@@ -56,8 +61,10 @@ namespace RepoScanner.Scanner.Secrets
                 .ThenBy(finding => finding.RuleId, StringComparer.Ordinal)
                 .ToList();
 
-            _logger.LogInformation("Secret scan found {FindingCount} findings in {FileCount} files and ignored {PlaceholderCount} placeholders",
-                sorted.Count, files.Count, placeholderCount);
+            _logger.LogInformation(
+                "Secret scan found {FindingCount} findings in {FileCount} files, ignored {PlaceholderCount} placeholders " +
+                "and could not read {UnreadableCount} files",
+                sorted.Count, files.Count - unreadableCount, placeholderCount, unreadableCount);
 
             return sorted;
         }
