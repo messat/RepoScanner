@@ -39,6 +39,10 @@
     <Threshold>80</Threshold>
     <ThresholdType>line</ThresholdType>
 
+    <!-- Auto-properties ({ get; set; }) hold no logic, so they are not counted: without this,
+         every column on an entity would count as an untested line -->
+    <SkipAutoProps>true</SkipAutoProps>
+
     <!-- Cobertura XML report under TestResults/ (git-ignored), readable by pipelines and report tools -->
     <CoverletOutputFormat>cobertura</CoverletOutputFormat>
     <CoverletOutput>$(MSBuildProjectDirectory)/TestResults/coverage/</CoverletOutput>
