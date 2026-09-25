@@ -19,6 +19,8 @@
     <PackageReference Include="coverlet.msbuild" />
     <!-- FakeLogger: records log messages so tests can assert on them -->
     <PackageReference Include="Microsoft.Extensions.Diagnostics.Testing" />
+    <!-- In-memory SQLite database, in place of SQL Server, for the local mode tests -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
   </ItemGroup>
 
   <!-- The project under test -->
