@@ -1,9 +1,13 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using RepoScanner.Core.Persistence;
+using RepoScanner.Data;
+using RepoScanner.Data.Repositories;
 using RepoScanner.Scanner.Configuration;
 using Serilog;
 using Serilog.Events;
@@ -111,6 +115,25 @@ namespace RepoScanner.Scanner
                 .Bind(builder.Configuration.GetSection(QueueOptions.SectionName))
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
+
+            // Database settings: read from the Scanner:Database section and checked when the host starts,
+            // like the queue settings. Required in every mode: the scanner's job is to save findings.
+            builder.Services.AddOptions<DatabaseOptions>()
+                .Bind(builder.Configuration.GetSection(DatabaseOptions.SectionName))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
+
+            // The shared EF Core context and repositories from RepoScanner.Data, one of each per scope.
+            // The connection string comes from the validated settings, and a transient SQL error (such as
+            // Azure SQL failing over) is retried rather than failing the scan (ADR-015). The repositories
+            // use one SaveChanges per method and no explicit transactions, which retrying supports.
+            builder.Services.AddDbContext<ScannerDbContext>((services, options) =>
+            {
+                DatabaseOptions database = services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
+                options.UseSqlServer(database.ConnectionString, sql => sql.EnableRetryOnFailure());
+            });
+            builder.Services.AddScoped<IScanRunRepository, ScanRunRepository>();
+            builder.Services.AddScoped<IFindingRepository, FindingRepository>();
 
             // Register the classes the host can create for us
             builder.Services.AddSingleton<ScanOrchestrator>();

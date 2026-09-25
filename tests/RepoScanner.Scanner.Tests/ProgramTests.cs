@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,17 +13,20 @@ namespace RepoScanner.Scanner.Tests
     [TestFixture]
     public class ProgramTests
     {
-        // Valid queue settings passed as command-line arguments, the last configuration source to be read
+        // Valid settings passed as command-line arguments, the last configuration source to be read.
+        // Nothing connects to the database in queue mode, so its connection string only has to be present.
         private static readonly string[] ValidArgs =
         {
             "--Scanner:Queue:Name", "scan-test",
-            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true"
+            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
+            "--Scanner:Database:ConnectionString", "Server=unused;Database=unused"
         };
 
-        // Queue settings with the required Name missing
+        // Settings with the required queue Name missing
         private static readonly string[] ArgsWithoutQueueName =
         {
-            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true"
+            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
+            "--Scanner:Database:ConnectionString", "Server=unused;Database=unused"
         };
 
         [Test]
@@ -47,7 +49,7 @@ namespace RepoScanner.Scanner.Tests
         [Test]
         public async Task Main_WithoutQueueName_LogsClearMessageWithoutStackTrace()
         {
-            string output = await CaptureConsoleAsync(() => Program.Main(ArgsWithoutQueueName));
+            string output = await ConsoleCapture.RunAsync(() => Program.Main(ArgsWithoutQueueName));
 
             Assert.That(output, Does.Contain("Invalid configuration"));
             Assert.That(output, Does.Contain("The Name field is required."));
@@ -65,7 +67,7 @@ namespace RepoScanner.Scanner.Tests
         [Test]
         public async Task RunAsync_WhenTheRunFails_LogsTheError()
         {
-            string output = await CaptureConsoleAsync(() => Program.RunAsync(ValidArgs, services => services.AddHostedService<FailingService>()));
+            string output = await ConsoleCapture.RunAsync(() => Program.RunAsync(ValidArgs, services => services.AddHostedService<FailingService>()));
 
             Assert.That(output, Does.Contain("Scanner failed"));
             Assert.That(output, Does.Contain("Simulated failure"));
@@ -108,27 +110,6 @@ namespace RepoScanner.Scanner.Tests
             public Task StopAsync(CancellationToken cancellationToken)
             {
                 return Task.CompletedTask;
-            }
-        }
-
-        // Runs the given code with the console redirected, and returns everything it wrote
-        private static async Task<string> CaptureConsoleAsync(Func<Task> action)
-        {
-            TextWriter originalOut = Console.Out;
-
-            using (StringWriter output = new StringWriter())
-            {
-                Console.SetOut(output);
-                try
-                {
-                    await action();
-                }
-                finally
-                {
-                    Console.SetOut(originalOut);
-                }
-
-                return output.ToString();
             }
         }
     }

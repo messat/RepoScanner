@@ -67,6 +67,7 @@ The app checks its settings when it starts and refuses to run if any are missing
 | `Scanner:Queue:ServiceUri` | One of these two | | Azure only, used with managed identity |
 | `Scanner:Queue:PoisonQueueName` | | `<Name>-poison` | Where failing messages are moved. One per lane, e.g. `scan-nightly-poison` (ADR-013) |
 | `Scanner:Queue:MaxDequeueCount` | | `3` | Attempts before a message is moved to the poison queue (ADR-013) |
+| `Scanner:Database:ConnectionString` | Yes | | The findings database. Locally, the `Scanner__Database__ConnectionString` user environment variable (see [Database and migrations](#database-and-migrations)); never in an appsettings file (ADR-007) |
 
 As environment variables, `:` becomes `__`, for example:
 
@@ -74,7 +75,7 @@ As environment variables, `:` becomes `__`, for example:
 $env:Scanner__Queue__Name = "scan-ondemand"
 ```
 
-Further settings (the scanner's database connection, Azure DevOps, execution limits) are added with the features that use them. The `dotnet ef` tool already reads the database connection string: see [Database and migrations](#database-and-migrations).
+Further settings (Azure DevOps, execution limits) are added with the features that use them. The scanner and the `dotnet ef` tool read the same database connection string: see [Database and migrations](#database-and-migrations).
 
 ## Database and migrations
 
