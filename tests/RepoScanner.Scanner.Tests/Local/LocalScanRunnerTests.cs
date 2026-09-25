@@ -168,6 +168,28 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
+        // ADR-013 again, when it is the save that fails: here the database rejects a finding with no
+        // message (NOT NULL), and the run must still end up Failed rather than Running for ever
+        [Test]
+        public async Task RunAsync_WhenSavingTheFindingsFails_StillMarksTheRunFailed()
+        {
+            RawFinding rejected = Raw("SEC003", "src/appsettings.json", 3, "hash-a") with { Message = null! };
+
+            await Assert.ThatAsync(() => RunAsync(new StubScanner(rejected)), Throws.InstanceOf<DbUpdateException>());
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Failed));
+                    Assert.That(run.CompletedUtc, Is.Not.Null);
+                    Assert.That(context.Findings.Count(), Is.Zero);
+                }
+            }
+        }
+
         // Log lines name the rule, file and line: never the preview, or anything else from the match
         [Test]
         public async Task RunAsync_LogsEachNewFindingWithoutItsPreview()
