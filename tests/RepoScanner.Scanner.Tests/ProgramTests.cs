@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,6 +8,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using RepoScanner.Core.Scanning;
+using RepoScanner.Scanner.Local;
+using RepoScanner.Scanner.Secrets;
 using Serilog.Extensions.Logging;
 
 namespace RepoScanner.Scanner.Tests
@@ -96,6 +101,42 @@ namespace RepoScanner.Scanner.Tests
                 OptionsValidationException? exception = Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
 
                 Assert.That(exception?.Message, Does.Contain("Name"));
+            }
+        }
+
+        [Test]
+        public void CreateBuilder_RegistersTheSecretScannerWithAllSevenRules()
+        {
+            using (IHost host = Program.CreateBuilder(ValidArgs).Build())
+            {
+                IEnumerable<string> ruleIds = host.Services.GetServices<ISecretRule>().Select(rule => rule.RuleId);
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(ruleIds, Is.EquivalentTo(new string[] { "SEC001", "SEC002", "SEC003", "SEC004", "SEC005", "SEC006", "SEC007" }));
+                    Assert.That(host.Services.GetServices<IScanner>().Single(), Is.TypeOf<SecretScanner>());
+                }
+            }
+        }
+
+        // Local mode reads no queue, so it starts without queue settings (#20, design decision 10)
+        [Test]
+        public async Task StartAsync_WithPathAndNoQueueSettings_StartsInLocalMode()
+        {
+            string[] args = { "--path", AppContext.BaseDirectory, "--Scanner:Database:ConnectionString", "Server=unused;Database=unused" };
+
+            using (IHost host = Program.CreateBuilder(args).Build())
+            {
+                await host.StartAsync();
+
+                using (IServiceScope scope = host.Services.CreateScope())
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(scope.ServiceProvider.GetService<LocalScanRunner>(), Is.Not.Null);
+                    Assert.That(host.Services.GetService<ScanOrchestrator>(), Is.Null);
+                }
+
+                await host.StopAsync();
             }
         }
 
