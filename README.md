@@ -67,6 +67,7 @@ The app checks its settings when it starts and refuses to run if any are missing
 | `Scanner:Queue:ServiceUri` | One of these two | | Azure only, used with managed identity |
 | `Scanner:Queue:PoisonQueueName` | | `<Name>-poison` | Where failing messages are moved. One per lane, e.g. `scan-nightly-poison` (ADR-013) |
 | `Scanner:Queue:MaxDequeueCount` | | `3` | Attempts before a message is moved to the poison queue (ADR-013) |
+| `Scanner:Database:ConnectionString` | Yes | | The findings database. Locally, the `Scanner__Database__ConnectionString` user environment variable (see [Database and migrations](#database-and-migrations)); never in an appsettings file (ADR-007) |
 
 As environment variables, `:` becomes `__`, for example:
 
@@ -74,7 +75,7 @@ As environment variables, `:` becomes `__`, for example:
 $env:Scanner__Queue__Name = "scan-ondemand"
 ```
 
-Further settings (the scanner's database connection, Azure DevOps, execution limits) are added with the features that use them. The `dotnet ef` tool already reads the database connection string: see [Database and migrations](#database-and-migrations).
+Further settings (Azure DevOps, execution limits) are added with the features that use them. The scanner and the `dotnet ef` tool read the same database connection string: see [Database and migrations](#database-and-migrations).
 
 ## Database and migrations
 
@@ -124,6 +125,21 @@ A change that removes or renames something follows expand/contract across releas
 
 If `dotnet ef` says `Scanner__Database__ConnectionString` is not set, repeat step 2 of the setup and open a new terminal.
 
+## Scan a local folder
+
+The scanner can scan a folder on your machine instead of reading the queue. It runs the secret scanner and saves the findings to the database in `Scanner:Database:ConnectionString`:
+
+```bash
+dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/secrets-repo
+```
+
+- The folder is saved in `Repositories` with the project name `Local`, and each scan as a row in `ScanRuns`.
+- Each finding has a masked preview and a SHA-256 hash of the secret. The secret itself is never saved or logged ([ADR-023](docs/adr/ADR-023-secret-hash-is-an-unsalted-sha-256.md)).
+- Running the same folder again adds only findings that are not already stored. Resolving and reopening findings comes with Issue 4.
+- Folders named `.git`, `bin`, `obj`, `node_modules`, `packages`, `.vs` and `TestResults`, files over 1 MB, binary files, symbolic links and files that cannot be opened are skipped.
+- So is any folder below the scanned one that contains a `.reposcanner-exclude` file. RepoScanner's own test data has one, so its fake secrets are not reported when this repository is scanned.
+- `tests/fixtures/secrets-repo` is a pretend repository whose secrets are all fake, for trying the scanner out.
+
 ## Exit codes
 
 The Container Apps Job reads the exit code to decide whether an execution succeeded.
@@ -132,7 +148,7 @@ The Container Apps Job reads the exit code to decide whether an execution succee
 |---|---|
 | `0` | Success, or nothing to do |
 | `1` | Unexpected failure during the run (logged with the full exception) |
-| `2` | Invalid configuration: the scanner did not start (logged as one line listing what is wrong) |
+| `2` | Invalid configuration, or a `--path` that does not name an existing folder: the scanner did not start (logged as one line saying what is wrong) |
 
 To see exit code 2 locally, run without the Development settings:
 
@@ -154,6 +170,7 @@ docs/
   adr/                    architecture decision records (index in docs/adr/README.md)
   design/                 design documents, one per issue
   images/                 diagrams used in the documentation
+  superpowers/plans/      implementation plans, one per issue (they quote the fixtures' fake secrets, so the folder is excluded from scans)
 src/
   RepoScanner.Core/       domain types and contracts shared by every project (no dependencies)
   RepoScanner.Data/       EF Core database access (DbContext, Fluent API configurations, migrations), shared with the dashboard
@@ -162,6 +179,7 @@ tests/
   RepoScanner.Core.Tests/     NUnit tests for Core
   RepoScanner.Data.Tests/     NUnit tests for Data
   RepoScanner.Scanner.Tests/  NUnit tests for Scanner
+  fixtures/                   pretend repositories for the scanners' tests (every secret in them is fake)
 ```
 
 ## Conventions

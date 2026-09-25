@@ -267,6 +267,27 @@ namespace RepoScanner.Data.Tests.Repositories
             }
         }
 
+        // A failed save must not leave its changes pending. The scanner marks the scan run Failed next,
+        // through the same context, and that save would otherwise try the failed findings again and fail
+        // the same way, leaving the run Running (ADR-013).
+        [Test]
+        public async Task SaveChangesAsync_WhenSavingFails_LeavesNothingPendingInTheContext()
+        {
+            int repositoryId = SeedRepository();
+            Finding added = TestEntities.NewFinding("a1");
+            added.RepositoryId = repositoryId;
+
+            using (ScannerDbContext context = _database.CreateContext(new FailingInsertInterceptor("Findings")))
+            {
+                FindingRepository repository = new FindingRepository(context);
+
+                await Assert.ThatAsync(() => repository.SaveChangesAsync(Changes(newFindings: new Finding[] { added }), CancellationToken.None),
+                    Throws.Exception);
+
+                Assert.That(context.ChangeTracker.HasChanges(), Is.False);
+            }
+        }
+
         private static FindingChanges Changes(
             IReadOnlyList<Finding>? newFindings = null,
             IReadOnlyList<Finding>? updatedFindings = null,

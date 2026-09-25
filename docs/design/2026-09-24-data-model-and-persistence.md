@@ -34,7 +34,7 @@ From Issue 2 (#7) and task #13:
 | 9 | Connection string for `dotnet ef` | User environment variable `Scanner__Database__ConnectionString` | No connection string in code (ADR-007) |
 | 10 | Where this document lives | `docs/design/` | Next to `docs/adr/`, part of the Issue 2 pull request |
 
-Also decided while setting up the local database: the local database is the SQL Server 2022 Express instance installed on the developer machine (`.\SQLEXPRESS`), reached with Windows authentication, not SQL Server in Docker. This is recorded as an amendment to ADR-017 in the same pull request.
+Also decided while setting up the local database: the local database is the SQL Server 2019 Express instance installed on the developer machine (`.\SQLEXPRESS`), reached with Windows authentication, not SQL Server in Docker. This is recorded as an amendment to ADR-017 in the same pull request.
 
 ## Project layout
 

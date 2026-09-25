@@ -1,10 +1,20 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using RepoScanner.Core.Persistence;
+using RepoScanner.Core.Scanning;
+using RepoScanner.Data;
+using RepoScanner.Data.Repositories;
 using RepoScanner.Scanner.Configuration;
+using RepoScanner.Scanner.Files;
+using RepoScanner.Scanner.Local;
+using RepoScanner.Scanner.Secrets;
+using RepoScanner.Scanner.Secrets.Rules;
 using Serilog;
 using Serilog.Events;
 
@@ -34,6 +44,21 @@ namespace RepoScanner.Scanner
 
             try
             {
+                // --path <folder> scans a folder on this machine instead of reading the queue (#20). A
+                // missing or wrong folder is a settings problem: one line and exit code 2, like the others.
+                string? localFolder = null;
+                if (LocalPathArgument.TryGet(args, out string? givenFolder))
+                {
+                    if (givenFolder == null || !Directory.Exists(givenFolder))
+                    {
+                        Log.Fatal("{Argument} must name a folder that exists, scanner not started: {Folder}",
+                            LocalPathArgument.Name, givenFolder ?? "(no folder given)");
+                        return ExitCodes.InvalidConfiguration;
+                    }
+
+                    localFolder = Path.GetFullPath(givenFolder);
+                }
+
                 HostApplicationBuilder builder = CreateBuilder(args);
                 configureServices?.Invoke(builder.Services);
 
@@ -45,8 +70,20 @@ namespace RepoScanner.Scanner
                     // Stops the work cleanly if the job is asked to shut down (Ctrl+C locally, SIGTERM in Azure)
                     IHostApplicationLifetime lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
 
-                    ScanOrchestrator orchestrator = host.Services.GetRequiredService<ScanOrchestrator>();
-                    await orchestrator.RunAsync(lifetime.ApplicationStopping);
+                    if (localFolder != null)
+                    {
+                        // LocalScanRunner uses the scoped DbContext and repositories, so it runs in a scope of its own
+                        using (IServiceScope scope = host.Services.CreateScope())
+                        {
+                            LocalScanRunner runner = scope.ServiceProvider.GetRequiredService<LocalScanRunner>();
+                            await runner.RunAsync(localFolder, lifetime.ApplicationStopping);
+                        }
+                    }
+                    else
+                    {
+                        ScanOrchestrator orchestrator = host.Services.GetRequiredService<ScanOrchestrator>();
+                        await orchestrator.RunAsync(lifetime.ApplicationStopping);
+                    }
 
                     await host.StopAsync();
                 }
@@ -105,15 +142,53 @@ namespace RepoScanner.Scanner
                 // before Main's catch blocks run
                 preserveStaticLogger: true);
 
-            // Queue settings: read from the Scanner:Queue section, checked against the rules on
-            // QueueOptions, and checked when the host starts rather than when first used
-            builder.Services.AddOptions<QueueOptions>()
-                .Bind(builder.Configuration.GetSection(QueueOptions.SectionName))
+            // Database settings: read from the Scanner:Database section and checked when the host starts,
+            // like the queue settings. Required in every mode: the scanner's job is to save findings.
+            builder.Services.AddOptions<DatabaseOptions>()
+                .Bind(builder.Configuration.GetSection(DatabaseOptions.SectionName))
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
 
-            // Register the classes the host can create for us
-            builder.Services.AddSingleton<ScanOrchestrator>();
+            // The shared EF Core context and repositories from RepoScanner.Data, one of each per scope.
+            // The connection string comes from the validated settings, and a transient SQL error (such as
+            // Azure SQL failing over) is retried rather than failing the scan (ADR-015). The repositories
+            // use one SaveChanges per method and no explicit transactions, which retrying supports.
+            builder.Services.AddDbContext<ScannerDbContext>((services, options) =>
+            {
+                DatabaseOptions database = services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
+                options.UseSqlServer(database.ConnectionString, sql => sql.EnableRetryOnFailure());
+            });
+            builder.Services.AddScoped<IScanRunRepository, ScanRunRepository>();
+            builder.Services.AddScoped<IFindingRepository, FindingRepository>();
+
+            // The secret scanner (#16, #17). Singletons: the walker and the rules keep nothing between scans.
+            builder.Services.AddSingleton<RepositoryFileWalker>();
+            builder.Services.AddSingleton<ISecretRule, Sec001PrivateKeyRule>();
+            builder.Services.AddSingleton<ISecretRule, Sec002AzureSharedKeyRule>();
+            builder.Services.AddSingleton<ISecretRule, Sec003ConnectionStringPasswordRule>();
+            builder.Services.AddSingleton<ISecretRule, Sec004UrlCredentialsRule>();
+            builder.Services.AddSingleton<ISecretRule, Sec005EntraClientSecretRule>();
+            builder.Services.AddSingleton<ISecretRule, Sec006NuGetApiKeyRule>();
+            builder.Services.AddSingleton<ISecretRule, Sec007NamedSettingRule>();
+            builder.Services.AddSingleton<IScanner, SecretScanner>();
+
+            if (LocalPathArgument.TryGet(args, out _))
+            {
+                // Local mode reads no queue, so queue settings are neither registered nor required (#20).
+                // Scoped, because it uses the scoped repositories.
+                builder.Services.AddScoped<LocalScanRunner>();
+            }
+            else
+            {
+                // Queue settings: read from the Scanner:Queue section, checked against the rules on
+                // QueueOptions, and checked when the host starts rather than when first used
+                builder.Services.AddOptions<QueueOptions>()
+                    .Bind(builder.Configuration.GetSection(QueueOptions.SectionName))
+                    .ValidateDataAnnotations()
+                    .ValidateOnStart();
+
+                builder.Services.AddSingleton<ScanOrchestrator>();
+            }
 
             return builder;
         }

@@ -1,0 +1,2 @@
+# RepoScanner skips any folder that contains this file when it scans a folder above it.
+# The implementation plans in this folder quote the test fixtures' fake secrets.

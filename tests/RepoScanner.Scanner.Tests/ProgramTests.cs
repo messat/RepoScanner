@@ -1,5 +1,6 @@
 using System;
-using System.IO;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,6 +8,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using RepoScanner.Core.Scanning;
+using RepoScanner.Scanner.Local;
+using RepoScanner.Scanner.Secrets;
 using Serilog.Extensions.Logging;
 
 namespace RepoScanner.Scanner.Tests
@@ -14,17 +18,20 @@ namespace RepoScanner.Scanner.Tests
     [TestFixture]
     public class ProgramTests
     {
-        // Valid queue settings passed as command-line arguments, the last configuration source to be read
+        // Valid settings passed as command-line arguments, the last configuration source to be read.
+        // Nothing connects to the database in queue mode, so its connection string only has to be present.
         private static readonly string[] ValidArgs =
         {
             "--Scanner:Queue:Name", "scan-test",
-            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true"
+            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
+            "--Scanner:Database:ConnectionString", "Server=unused;Database=unused"
         };
 
-        // Queue settings with the required Name missing
+        // Settings with the required queue Name missing
         private static readonly string[] ArgsWithoutQueueName =
         {
-            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true"
+            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
+            "--Scanner:Database:ConnectionString", "Server=unused;Database=unused"
         };
 
         [Test]
@@ -47,7 +54,7 @@ namespace RepoScanner.Scanner.Tests
         [Test]
         public async Task Main_WithoutQueueName_LogsClearMessageWithoutStackTrace()
         {
-            string output = await CaptureConsoleAsync(() => Program.Main(ArgsWithoutQueueName));
+            string output = await ConsoleCapture.RunAsync(() => Program.Main(ArgsWithoutQueueName));
 
             Assert.That(output, Does.Contain("Invalid configuration"));
             Assert.That(output, Does.Contain("The Name field is required."));
@@ -65,7 +72,7 @@ namespace RepoScanner.Scanner.Tests
         [Test]
         public async Task RunAsync_WhenTheRunFails_LogsTheError()
         {
-            string output = await CaptureConsoleAsync(() => Program.RunAsync(ValidArgs, services => services.AddHostedService<FailingService>()));
+            string output = await ConsoleCapture.RunAsync(() => Program.RunAsync(ValidArgs, services => services.AddHostedService<FailingService>()));
 
             Assert.That(output, Does.Contain("Scanner failed"));
             Assert.That(output, Does.Contain("Simulated failure"));
@@ -97,6 +104,42 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        [Test]
+        public void CreateBuilder_RegistersTheSecretScannerWithAllSevenRules()
+        {
+            using (IHost host = Program.CreateBuilder(ValidArgs).Build())
+            {
+                IEnumerable<string> ruleIds = host.Services.GetServices<ISecretRule>().Select(rule => rule.RuleId);
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(ruleIds, Is.EquivalentTo(new string[] { "SEC001", "SEC002", "SEC003", "SEC004", "SEC005", "SEC006", "SEC007" }));
+                    Assert.That(host.Services.GetServices<IScanner>().Single(), Is.TypeOf<SecretScanner>());
+                }
+            }
+        }
+
+        // Local mode reads no queue, so it starts without queue settings (#20, design decision 10)
+        [Test]
+        public async Task StartAsync_WithPathAndNoQueueSettings_StartsInLocalMode()
+        {
+            string[] args = { "--path", AppContext.BaseDirectory, "--Scanner:Database:ConnectionString", "Server=unused;Database=unused" };
+
+            using (IHost host = Program.CreateBuilder(args).Build())
+            {
+                await host.StartAsync();
+
+                using (IServiceScope scope = host.Services.CreateScope())
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(scope.ServiceProvider.GetService<LocalScanRunner>(), Is.Not.Null);
+                    Assert.That(host.Services.GetService<ScanOrchestrator>(), Is.Null);
+                }
+
+                await host.StopAsync();
+            }
+        }
+
         // A service that throws as soon as the host starts it, to simulate an unexpected failure
         internal sealed class FailingService : IHostedService
         {
@@ -108,27 +151,6 @@ namespace RepoScanner.Scanner.Tests
             public Task StopAsync(CancellationToken cancellationToken)
             {
                 return Task.CompletedTask;
-            }
-        }
-
-        // Runs the given code with the console redirected, and returns everything it wrote
-        private static async Task<string> CaptureConsoleAsync(Func<Task> action)
-        {
-            TextWriter originalOut = Console.Out;
-
-            using (StringWriter output = new StringWriter())
-            {
-                Console.SetOut(output);
-                try
-                {
-                    await action();
-                }
-                finally
-                {
-                    Console.SetOut(originalOut);
-                }
-
-                return output.ToString();
             }
         }
     }

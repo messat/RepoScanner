@@ -49,7 +49,18 @@ namespace RepoScanner.Data.Repositories
 
             _context.FindingEvents.AddRange(changes.NewEvents);
 
-            await _context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch
+            {
+                // A failed save leaves its changes pending in this context, so the next SaveChanges (the
+                // scanner marking the scan run Failed, ADR-013) would try them again and fail the same way.
+                // Discarding them keeps the context usable; the findings are found again by the next scan.
+                _context.ChangeTracker.Clear();
+                throw;
+            }
         }
     }
 }
