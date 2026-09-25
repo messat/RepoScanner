@@ -4,6 +4,7 @@
 - **Date:** 2026-09-25
 - **Work item:** Issue 3, #14 (tasks #15 to #21 and #71)
 - **Branch:** `feature/14-secret-scanner-against-a-local-path`
+- **Amended:** 2026-09-25, with six fixes from the whole-branch review: files that cannot be read and folders that cannot be listed, placeholder references in code, SEC007 setting names, a failed save, and SEC001 in JSON
 
 ## Purpose
 
@@ -130,7 +131,7 @@ public interface ISecretRule
 
 | Rule | Message | Matches | The `secret` group | Severity |
 |---|---|---|---|---|
-| SEC001 | Private key | A block from `-----BEGIN <type>PRIVATE KEY-----` to the matching `-----END <type>PRIVATE KEY-----`, where `<type>` is empty, `RSA `, `EC `, `DSA `, `OPENSSH ` or `ENCRYPTED ` | The text between the two lines, with whitespace removed so that line endings do not change the hash | Critical |
+| SEC001 | Private key | A block from `-----BEGIN <type>PRIVATE KEY-----` to the matching `-----END <type>PRIVATE KEY-----`, where `<type>` is empty, `RSA `, `EC `, `DSA `, `OPENSSH ` or `ENCRYPTED `, including a block written on one line with `\n` escapes, as in a JSON string | The text between the two lines, with whitespace and the escapes `\n` and `\r` removed, so that line endings and JSON escaping do not change the hash | Critical |
 | SEC002 | Azure Storage or Service Bus key | `AccountKey=` or `SharedAccessKey=`, in any case, followed by at least 40 base64 characters | The base64 value | Critical |
 | SEC003 | Password in a connection string | `Password=` or `Pwd=`, in any case and with spaces allowed around `=`, in a `key=value;` list on one line that also has a `Server`, `Data Source`, `Host` or `Address` key | The value, up to `;`, a quote or the end of the line | High |
 | SEC004 | Credentials in a URL | `scheme://user:password@host`, where the user and password are not empty and contain no `/`, `@` or whitespace. A URL with a user name only, such as the clone URLs Azure DevOps offers (ADR-016), is not matched | The password | High |
@@ -138,7 +139,7 @@ public interface ISecretRule
 | SEC006 | NuGet API key | `oy2` followed by exactly 43 lower-case letters and digits, as a whole token | The whole token | High |
 | SEC007 | Password, secret or key in a named setting | A setting whose name suggests a secret (see below), in one of three forms: a quoted value after `:` or `=`, as in JSON, YAML, C# and PowerShell; an XML pair, as in `<add key="ClientSecret" value="..." />`; or, at the start of a line, an unquoted `NAME=value` with no spaces around `=`, or `name: value`, as in `.env`, shell and YAML files | The value, without its quotes | Medium |
 
-**Names SEC007 treats as secret.** The name, in any case, contains `password`, `passwd`, `pwd`, `secret`, `token`, `apikey`, `api_key`, `api-key`, `accesskey` or `access_key`; or it is `pat`, ends in `Pat` with a capital P, or ends in `_pat`, `-pat` or `.pat` in any case. So `AzureDevOpsPat` and `DEVOPS_PAT` count, while `Path` and `compat` do not. Names ending in `Url`, `Uri`, `Endpoint`, `Name`, `Path`, `Type`, `Length`, `Lifetime` or `Timeout` are left out, which removes common settings such as `TokenEndpoint` and `SecretName`. The value must be at least 8 characters, contain no whitespace, and not be a URL (no `://`). An unquoted value also stops at `#`, `;`, `,`, `(` and `)`. Together with the "no spaces around `=`" rule, this means a line of C# such as `Password = options.Password;` is not read as a setting.
+**Names SEC007 treats as secret.** The name, in any case, contains `password`, `passwd`, `pwd`, `secret`, `token`, `apikey`, `api_key`, `api-key`, `accesskey` or `access_key`; or it is `pat`, ends in `Pat` with a capital P, or ends in `_pat`, `-pat` or `.pat` in any case. So `AzureDevOpsPat` and `DEVOPS_PAT` count, while `Path` and `compat` do not. Names ending in `Url`, `Uri`, `Endpoint`, `Name`, `Path`, `Type`, `Length`, `Lifetime`, `Timeout`, `Hash`, `Pattern`, `Regex` or `Header` are left out, which removes common settings such as `TokenEndpoint`, `SecretName`, `PasswordHash`, `PasswordPattern` and `ApiKeyHeader`. The value must be at least 8 characters, contain no whitespace, and not be a URL (no `://`). An unquoted value also stops at `#`, `;`, `,`, `(` and `)`. Together with the "no spaces around `=`" rule, this means a line of C# such as `Password = options.Password;` is not read as a setting.
 
 **Order and overlaps.** Rules run in `RuleId` order. When the `secret` groups of two matches in one file overlap, the match from the lower-numbered rule is kept, so a specific rule always wins over SEC007. For example, a storage connection string held in a setting called `StorageKey` is reported once, as SEC002.
 
@@ -157,17 +158,17 @@ Each rule has at least one test it must catch and one look-alike it must ignore,
 | Binary files | A zero byte in the first 8,000 bytes | #68. This is the test git uses, so no list of extensions is needed |
 | Symbolic links | Links to files or folders are not followed | A cloned repository could link to a file outside itself |
 | Excluded folders | A folder containing `.reposcanner-exclude`, and everything below it, when that folder is below the scan root. A marker in the scan root itself is ignored | Decision 6 |
-| Unreadable files | A file that cannot be opened, for example because another program has it locked, is skipped with a warning naming it | A locked file in a working folder should not stop the whole scan |
+| Unreadable files and folders | A file that cannot be opened or read, for example because another program has locked it or it was deleted during the scan, and a folder that cannot be listed, are skipped with a warning naming them. Files are opened allowing other programs to go on writing to them, so a log file an application has open is still scanned | One file or folder should not stop the whole scan |
 
-Everything else is scanned, whatever its extension. Files are read as UTF-8, honouring a byte order mark; bytes that are not valid UTF-8 are replaced rather than failing, so the rest of the file is still scanned. The walker logs one line with the number of files skipped for each reason.
+Everything else is scanned, whatever its extension. Files are read as UTF-8, honouring a byte order mark; bytes that are not valid UTF-8 are replaced rather than failing, so the rest of the file is still scanned. The walker reads the files too (`TryReadTextAsync`), so every scanner gets the same handling of a file that cannot be read. It logs one line with the number of files and folders skipped for each reason.
 
 ## Secret scanner (#16)
 
 `SecretScanner` implements `IScanner` with `ScannerType.Secret`. It takes the walker, the rules (`IEnumerable<ISecretRule>`, sorted by `RuleId` so the order never depends on registration) and a logger. For each file:
 
-1. Read the text once.
+1. Read the text once, through the walker, which skips the file with a warning if it cannot be read.
 2. Run each rule's `Pattern` on the whole text, in rule order.
-3. For each match, take the value of its `secret` group with all whitespace removed (only SEC001 and SEC003 values can contain any), and drop the match if the value is a placeholder (#19) or overlaps the secret of a match already kept in this file.
+3. For each match, take the value of its `secret` group with all whitespace and the escapes `\n` and `\r` removed (only SEC001 and SEC003 values can contain any), and drop the match if the value is a placeholder (#19), including a value that is just the name of the setting it is assigned to (the rule's `name` group, which SEC003 and SEC007 have), or if it overlaps the secret of a match already kept in this file.
 4. Work out the line number: 1 plus the number of line feeds before the match starts.
 5. Mask and hash the value (#18) and build the `RawFinding`. The raw value goes no further.
 
@@ -184,11 +185,12 @@ When it finishes, the scanner logs one line with the number of files scanned, pl
 | Kind | Values |
 |---|---|
 | A placeholder word | `changeme`, `change-me`, `password`, `secret`, `placeholder`, `redacted`, `todo`, `none`, `null`, `example`, `dummy` |
-| A reference to a value kept elsewhere | `${NAME}`, `$(NAME)`, `#{NAME}#` (Azure Pipelines token replacement), `%NAME%`, `{{NAME}}`, `__NAME__` and `<NAME>`, where `NAME` is anything that is not empty |
+| A reference to a value kept elsewhere | `${NAME}`, `$(NAME)`, `#{NAME}#` (Azure Pipelines token replacement), `%NAME%`, `{{NAME}}`, `{NAME}` (C# interpolation and `string.Format`), `__NAME__` and `<NAME>`, where `NAME` is anything that is not empty; `$env:NAME` (PowerShell); and `$NAME` in capital letters, digits and underscores (shell and pipeline variables) |
+| The setting's own name | A value equal to the name of the setting it is assigned to, ignoring case and anything that is not a letter or digit: `Password=$password`, `AcquireToken: "acquireToken"` |
 | One character repeated | `xxxxxxxx`, `********`, `00000000` |
 | A value starting `your-` or `your_` | `your-api-key-here` |
 
-Only whole values count: `changeme123` is reported, and so is a key that contains the word `EXAMPLE`. The allow-list applies to every rule, although in practice only SEC003, SEC004 and SEC007 can match a placeholder, because the other rules need fixed formats.
+Only whole values count: `changeme123` is reported, and so is a key that contains the word `EXAMPLE`. A `$name` in lower or mixed case is reported unless it is the setting's own name, because `$uperSecret1` could be a real password. The allow-list applies to every rule, although in practice only SEC003, SEC004 and SEC007 can match a placeholder, because the other rules need fixed formats.
 
 ## Masking and hashing (#18)
 
@@ -245,7 +247,7 @@ dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/secrets-re
    - Everything is saved in one `SaveChangesAsync`, with new findings only.
    - A comment marks this code as replaced by `FingerprintCalculator` (#23) and `FindingReconciler` (#24) when #26 wires them into local mode.
 5. **Complete.** `CompleteRunAsync` with `Completed`, no commit SHA, `NewCount` as saved, `ReopenedCount` and `ResolvedCount` of 0, and one `ScannerResult` per scanner, with `Succeeded`, its finding count and its duration.
-6. **Failure.** If a scan or the save throws, the runner calls `CompleteRunAsync` with `Failed` and the exception message, then rethrows, so `Program` logs the exception and exits with code 1. If that call fails too, the original exception is the one that continues.
+6. **Failure.** If a scan or the save throws, the runner calls `CompleteRunAsync` with `Failed` and the exception message, then rethrows, so `Program` logs the exception and exits with code 1. `FindingRepository.SaveChangesAsync` discards its pending changes when a save fails, so this second call does not try the failed findings again and can still record `Failed`. If that call fails too, the original exception is the one that continues.
 
 It logs a start line with the folder and scan run ID, one line per new finding (rule, file and line), and a summary line with the number of findings found, new and already stored, and the duration.
 
@@ -301,13 +303,13 @@ Each rule, skip rule and method is written test first: a failing test, then the 
 
 | Task | Tests |
 |---|---|
-| #17 | Each rule catches at least one example and ignores at least one look-alike |
-| #19 | Each kind of placeholder is recognised; `changeme123` is not |
+| #17 | Each rule catches at least one example and ignores at least one look-alike; SEC001 on one line with JSON escapes; SEC007 names ending in `Hash`, `Pattern`, `Regex` and `Header`; this repository's own `src`, `tests` and `docs` folders give no findings |
+| #19 | Each kind of placeholder is recognised, including C#, PowerShell and shell variable references and a value that is the setting's own name; `changeme123` and `$uperSecret1` are not |
 | #18 | The preview for secrets of 3, 4, 8, 16 and 88 characters; the SHA-256 of `abc` matches the published test value |
-| #16 | Walker, in temporary folders: each skipped folder name; 1,048,576 bytes scanned and 1,048,577 skipped; a zero byte in the first 8,000 bytes skipped and one after them scanned; the marker ignored at the root and honoured below it; forward slashes and a fixed order; a symbolic link not followed, marked inconclusive if Windows does not let the test create one; a locked file skipped with a warning. Scanner: line numbers, the same with Windows line endings; a file that is not valid UTF-8 still scanned; the lower-numbered rule winning an overlap; placeholders dropped; a rule that times out logs a warning while the other rules still report |
+| #16 | Walker, in temporary folders: each skipped folder name; 1,048,576 bytes scanned and 1,048,577 skipped; a zero byte in the first 8,000 bytes skipped and one after them scanned; the marker ignored at the root and honoured below it; forward slashes and a fixed order; a symbolic link not followed, marked inconclusive if Windows does not let the test create one; a locked file skipped with a warning; a file another program has open for writing still listed; a file deleted or locked partway after the walk, and a folder that cannot be listed, skipped with a warning. Scanner: line numbers, the same with Windows line endings; a file that is not valid UTF-8 still scanned; the lower-numbered rule winning an overlap; placeholders dropped; a rule that times out logs a warning while the other rules still report |
 | #21, #18 | Scanning the fixture gives exactly the findings in `FixtureSecrets`; no fake value appears in any `RawFinding` (checked through its `ToString()`) or in the captured log output |
 | #71 | A missing connection string exits with 2 and one line naming it; `ScannerDbContext` and both repositories resolve from the host's services; no appsettings file has a `Scanner:Database` section |
-| #20 | `Program.RunAsync` with `--path` on the fixture and in-memory SQLite in place of SQL Server: exit code 0; the expected findings saved with previews, hashes and `Detected` events; a `Completed` run with one `Succeeded` scanner result; a second run adds nothing and exits with 0; a missing folder, and `--path` with no folder, exit with 2; no fake value in the saved rows or the logs |
+| #20 | `Program.RunAsync` with `--path` on the fixture and in-memory SQLite in place of SQL Server: exit code 0; the expected findings saved with previews, hashes and `Detected` events; a `Completed` run with one `Succeeded` scanner result; a second run adds nothing and exits with 0; a missing folder, and `--path` with no folder, exit with 2; no fake value in the saved rows or the logs; a save that fails still marks the run `Failed` |
 
 - Scanner.Tests gains `Microsoft.EntityFrameworkCore.Sqlite`. The end-to-end test replaces the SQL Server registration with SQLite through `RunAsync`'s `configureServices`, and creates the schema with `EnsureCreated()`, which test projects may call (Issue 2, task #13).
 - The 80% gate on the Scanner project covers `SecretScanner` and the rules, which is success criterion 3. Core gains no logic.
