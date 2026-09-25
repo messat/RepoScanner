@@ -18,6 +18,17 @@ namespace RepoScanner.Scanner.Tests.Secrets
             Assert.That(SecretValue.FromMatch(match), Is.EqualTo("abcd"));
         }
 
+        // Review fix: JSON writes a line break inside a string as the two characters \n (and \r), so they
+        // are removed like real line breaks
+        [Test]
+        public void FromMatch_RemovesTheEscapesBackslashNAndBackslashR()
+        {
+            Regex pattern = SecretRulePattern.Create(@"key=(?<secret>[a-z\\]+);");
+            Match match = pattern.Match(@"key=ab\ncd\r\nef;");
+
+            Assert.That(SecretValue.FromMatch(match), Is.EqualTo("abcdef"));
+        }
+
         [Test]
         public void Create_UsesTheOneSecondTimeoutAndCultureInvariantMatching()
         {

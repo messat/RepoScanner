@@ -10,7 +10,7 @@ A secret finding must be recognised as the same secret across scans and across f
 
 ## Decision
 
-`SecretHash` is the SHA-256 of the secret's UTF-8 bytes, as 64 lower-case hex characters, with no salt and no key. `SecretHasher` in RepoScanner.Scanner computes it. Whitespace is removed from the secret first, so line endings do not change it.
+`SecretHash` is the SHA-256 of the secret's UTF-8 bytes, as 64 lower-case hex characters, with no salt and no key. `SecretHasher` in RepoScanner.Scanner computes it. Whitespace and the escapes `\n` and `\r` are removed from the secret first, so line endings and JSON escaping do not change it.
 
 ## Consequences
 

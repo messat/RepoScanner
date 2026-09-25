@@ -47,6 +47,16 @@ namespace RepoScanner.Scanner.Tests.Secrets.Rules
             Assert.That(secrets, Is.EqualTo(new string[] { FirstLine + SecondLine }));
         }
 
+        // Review fix: a key held in a JSON string, as in a service account key file, is one line with \n
+        // escapes. With the escapes removed it is the same secret, so it hashes the same as the .pem form.
+        [Test]
+        public void Pattern_FindsAKeyWrittenOnOneLineWithJsonEscapes()
+        {
+            string json = "{ \"private_key\": \"-----BEGIN PRIVATE KEY-----\\n" + FirstLine + "\\n" + SecondLine + "\\n-----END PRIVATE KEY-----\\n\" }";
+
+            Assert.That(RuleMatches.SecretsFoundBy(_rule, json), Is.EqualTo(new string[] { FirstLine + SecondLine }));
+        }
+
         // An older password-protected RSA key has header lines inside the block
         [Test]
         public void Pattern_FindsAKeyWithEncryptionHeaders()
