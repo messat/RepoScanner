@@ -48,6 +48,11 @@ namespace RepoScanner.Scanner.Tests.Secrets.Rules
         [TestCase("            Password = options.Password;")]
         [TestCase("            ClientSecret = configuration[\"ClientSecret\"];")]
         [TestCase("    public Task RunAsync(CancellationToken cancellationToken)")]
+        // Review fix: a hash, a pattern and a header name are not the secret itself
+        [TestCase("\"SecretHash\": \"5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8\"")]
+        [TestCase("private const string PasswordPattern = @\"(?:Password|Pwd)=(?<secret>[^;]+)\";")]
+        [TestCase("\"PasswordRegex\": \"^(?=.*[A-Z]).{8,}$\"")]
+        [TestCase("ApiKeyHeader = \"X-Api-Key-Name\"")]
         public void Pattern_IgnoresLookAlikes(string text)
         {
             Assert.That(RuleMatches.SecretsFoundBy(_rule, text), Is.Empty);

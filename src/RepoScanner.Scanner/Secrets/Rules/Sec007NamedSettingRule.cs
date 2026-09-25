@@ -18,8 +18,9 @@ namespace RepoScanner.Scanner.Secrets.Rules
             @"|[\w.$-]*(?-i:Pat)" +
             @"|[\w.$-]*[_.-]pat" +
             @")" +
-            // ...and does not end in a word naming something other than the secret, such as TokenEndpoint
-            @"(?<!url|uri|endpoint|name|path|type|length|lifetime|timeout)";
+            // ...and does not end in a word naming something other than the secret, such as TokenEndpoint,
+            // PasswordHash, PasswordPattern or ApiKeyHeader
+            @"(?<!url|uri|endpoint|name|path|type|length|lifetime|timeout|hash|pattern|regex|header)";
 
         // At least 8 characters, no whitespace, and not a URL
         private const string QuotedValue = @"(?<secret>(?![^\s""']*://)[^\s""']{8,})";
