@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace RepoScanner.Data.Tests
 {
@@ -25,11 +26,12 @@ namespace RepoScanner.Data.Tests
         }
 
         // A new context each time, so a test that reads back what it saved gets it from the database,
-        // not from the saving context's change tracker
-        public ScannerDbContext CreateContext()
+        // not from the saving context's change tracker. Interceptors let a test make a command fail on purpose.
+        public ScannerDbContext CreateContext(params IInterceptor[] interceptors)
         {
             DbContextOptions<ScannerDbContext> options = new DbContextOptionsBuilder<ScannerDbContext>()
                 .UseSqlite(_connection)
+                .AddInterceptors(interceptors)
                 .Options;
 
             return new ScannerDbContext(options);
