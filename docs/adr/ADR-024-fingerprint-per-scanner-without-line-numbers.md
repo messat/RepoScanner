@@ -37,3 +37,7 @@ A finding keeps its fingerprint when code above it changes, so its suppression a
 Renaming or moving a file changes the fingerprints of its findings: they are resolved and found again as new, and their suppressions do not follow. The spike document accepts this rather than solving it. Because the version is a part, upgrading a package to another vulnerable version resolves the old finding and opens a new one, which is correct: it is a different advisory to check.
 
 Changing any formula, or how Issue 6 tidies the code, changes existing fingerprints in the same way: every affected finding is resolved and found again as new, and loses its suppression. Such a change needs a new ADR that says so.
+
+## Amendments
+
+**2026-09-27 (Issue 5, #43):** For a package, the file path is the file where the version is set: the `.csproj`, or `Directory.Packages.props` when the version is set centrally (Central Package Management). One vulnerable version set centrally is then one finding, in the place it is fixed, rather than one per project that uses it. The formula is unchanged; only what "project file path" names is made exact.
