@@ -12,16 +12,14 @@ using RepoScanner.Core.Entities;
 using RepoScanner.Core.Enums;
 using RepoScanner.Core.Persistence;
 using RepoScanner.Core.Scanning;
+using RepoScanner.Scanner.Reconciliation;
 
 namespace RepoScanner.Scanner.Local
 {
-    // Runs the scanners on a folder on this machine and saves what they find (--path, #20): the first
-    // vertical slice, with no queue and no clone. The queue loop arrives in Issue 5.
+    // Runs the scanners on a folder on this machine and reconciles what they find with the findings
+    // already stored for it (--path, #20 and #26): no queue and no clone. The queue loop arrives in Issue 5.
     public sealed class LocalScanRunner
     {
-        // Events the scanner raises are attributed to it rather than to a person (Issue 2 design)
-        public const string ScannerActor = "scanner";
-
         // Local folders are kept under this project name, so they are easy to tell apart from Azure
         // DevOps repositories in the Repositories table
         public const string LocalProjectName = "Local";
@@ -84,14 +82,28 @@ namespace RepoScanner.Scanner.Local
                     found.AddRange(scannerFindings);
                 }
 
-                int newCount = await SaveNewFindingsAsync(scanRun, found, cancellationToken);
+                ReconciliationResult reconciliation = await ReconcileAsync(scanRun, found, cancellationToken);
 
                 ScanRunCompletion completion = new ScanRunCompletion(
-                    ScanRunStatus.Completed, CommitSha: null, DateTime.UtcNow, newCount, ReopenedCount: 0, ResolvedCount: 0, ErrorMessage: null, results);
+                    ScanRunStatus.Completed,
+                    CommitSha: null,
+                    DateTime.UtcNow,
+                    reconciliation.NewCount,
+                    reconciliation.ReopenedCount,
+                    reconciliation.ResolvedCount,
+                    ErrorMessage: null,
+                    results);
                 await _scanRuns.CompleteRunAsync(scanRun.Id, completion, cancellationToken);
 
-                _logger.LogInformation("Scan run {ScanRunId} completed in {DurationMs} ms: {FoundCount} found, {NewCount} new, {KnownCount} already stored",
-                    scanRun.Id, duration.ElapsedMilliseconds, found.Count, newCount, found.Count - newCount);
+                _logger.LogInformation(
+                    "Scan run {ScanRunId} completed in {DurationMs} ms: {FoundCount} found, {NewCount} new, {ReopenedCount} reopened, {ResolvedCount} resolved, {SuppressionExpiredCount} suppressions expired",
+                    scanRun.Id,
+                    duration.ElapsedMilliseconds,
+                    found.Count,
+                    reconciliation.NewCount,
+                    reconciliation.ReopenedCount,
+                    reconciliation.ResolvedCount,
+                    reconciliation.SuppressionExpiredCount);
             }
             catch (Exception exception)
             {
@@ -100,73 +112,48 @@ namespace RepoScanner.Scanner.Local
             }
         }
 
-        // Interim, Issue 3 only (design decision 2): findings already stored, or repeated within this
-        // run, are skipped, so running the same folder twice adds nothing. Replaced by
-        // FingerprintCalculator (#23) and FindingReconciler (#24) when #26 wires them into local mode.
-        private async Task<int> SaveNewFindingsAsync(ScanRun scanRun, IReadOnlyList<RawFinding> found, CancellationToken cancellationToken)
+        // Compares what was found with the findings already stored for the folder and saves the changes
+        // in one go (Issue 4 design, Local mode)
+        private async Task<ReconciliationResult> ReconcileAsync(ScanRun scanRun, IReadOnlyList<RawFinding> found, CancellationToken cancellationToken)
         {
             IReadOnlyList<Finding> stored = await _findings.GetByRepositoryAsync(scanRun.RepositoryId, cancellationToken);
-            HashSet<string> seen = new HashSet<string>(stored.Select(finding => finding.Fingerprint), StringComparer.Ordinal);
-            DateTime nowUtc = DateTime.UtcNow;
-            List<Finding> newFindings = new List<Finding>();
 
-            foreach (RawFinding raw in found)
+            // Every scanner that ran has completed, because one that throws fails the whole run before
+            // anything is saved (Issue 4 design, decision 3). Issue 5 (#31) carries on after a failure,
+            // and passes only the scanners that succeeded (ADR-025).
+            HashSet<ScannerType> completedScannerTypes = new HashSet<ScannerType>(_scanners.Select(scanner => scanner.ScannerType));
+
+            ReconciliationResult reconciliation = FindingReconciler.Reconcile(stored, found, completedScannerTypes, scanRun, DateTime.UtcNow);
+            await _findings.SaveChangesAsync(reconciliation.Changes, cancellationToken);
+
+            LogChanges(reconciliation.Changes);
+            return reconciliation;
+        }
+
+        // One line per new, reopened and resolved finding, once they are saved. The rule, file and line
+        // only: never the matched text or its preview.
+        private void LogChanges(FindingChanges changes)
+        {
+            foreach (Finding finding in changes.NewFindings)
             {
-                string fingerprint = InterimFingerprint(raw);
-
-                // False when the fingerprint is already stored, or was already added in this run
-                if (!seen.Add(fingerprint))
-                {
-                    continue;
-                }
-
-                Finding finding = ToFinding(raw, scanRun.RepositoryId, fingerprint, nowUtc);
-                finding.Events.Add(new FindingEvent
-                {
-                    ScanRunId = scanRun.Id,
-                    EventType = FindingEventType.Detected,
-                    OccurredUtc = nowUtc,
-                    Actor = ScannerActor
-                });
-                newFindings.Add(finding);
-
-                // The rule, file and line only: never the matched text or its preview
-                _logger.LogInformation("New finding {RuleId} in {FilePath} at line {LineNumber}", raw.RuleId, raw.FilePath, raw.LineNumber);
+                _logger.LogInformation("New finding {RuleId} in {FilePath} at line {LineNumber}", finding.RuleId, finding.FilePath, finding.LineNumber);
             }
 
-            await _findings.SaveChangesAsync(new FindingChanges(newFindings, Array.Empty<Finding>(), Array.Empty<FindingEvent>()), cancellationToken);
-            return newFindings.Count;
-        }
+            Dictionary<int, Finding> updatedById = changes.UpdatedFindings.ToDictionary(finding => finding.Id);
 
-        // SHA-256, in lower-case hex, of the rule, the file and the secret's hash. No line number, so a
-        // finding that moves down the file keeps its fingerprint, as #27 will require.
-        private static string InterimFingerprint(RawFinding raw)
-        {
-            string identity = raw.RuleId + "|" + raw.FilePath + "|" + raw.SecretHash;
-            return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
-        }
-
-        private static Finding ToFinding(RawFinding raw, int repositoryId, string fingerprint, DateTime nowUtc)
-        {
-            return new Finding
+            foreach (FindingEvent findingEvent in changes.NewEvents)
             {
-                RepositoryId = repositoryId,
-                Fingerprint = fingerprint,
-                ScannerType = raw.ScannerType,
-                RuleId = raw.RuleId,
-                Severity = raw.Severity,
-                FilePath = raw.FilePath,
-                LineNumber = raw.LineNumber,
-                Message = raw.Message,
-                MaskedPreview = raw.MaskedPreview,
-                SecretHash = raw.SecretHash,
-                PackageName = raw.PackageName,
-                PackageVersion = raw.PackageVersion,
-                AdvisoryUrl = raw.AdvisoryUrl,
-                Status = FindingStatus.Open,
-                FirstSeenUtc = nowUtc,
-                LastSeenUtc = nowUtc
-            };
+                Finding finding = updatedById[findingEvent.FindingId];
+
+                if (findingEvent.EventType == FindingEventType.Reopened)
+                {
+                    _logger.LogInformation("Reopened finding {RuleId} in {FilePath} at line {LineNumber}", finding.RuleId, finding.FilePath, finding.LineNumber);
+                }
+                else if (findingEvent.EventType == FindingEventType.Resolved)
+                {
+                    _logger.LogInformation("Resolved finding {RuleId} in {FilePath} at line {LineNumber}", finding.RuleId, finding.FilePath, finding.LineNumber);
+                }
+            }
         }
 
         // Marks the run Failed with the error, so a failed scan is visible in ScanRuns (ADR-013). If that

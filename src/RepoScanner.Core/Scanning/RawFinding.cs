@@ -3,8 +3,9 @@ using RepoScanner.Core.Enums;
 namespace RepoScanner.Core.Scanning
 {
     // What a scanner reports about one problem, before it is matched against the stored findings. It
-    // holds exactly the Finding columns a scanner can know. There is deliberately no property for a
-    // secret's raw value, so one can never be passed on or saved by mistake (Issue 3 design).
+    // holds the Finding columns a scanner can know, plus SnippetHash, which only feeds the fingerprint
+    // (Issue 4 design). There is deliberately no property for a secret's raw value, so one can never be
+    // passed on or saved by mistake (Issue 3 design).
     public sealed record RawFinding
     {
         public required ScannerType ScannerType { get; init; }
@@ -34,5 +35,9 @@ namespace RepoScanner.Core.Scanning
         public string? PackageVersion { get; init; }
 
         public string? AdvisoryUrl { get; init; }
+
+        // Code-pattern findings only (Issue 8): SHA-256 of the matched code, which identifies the finding
+        // without its line number (ADR-024). Not stored: the fingerprint carries it.
+        public string? SnippetHash { get; init; }
     }
 }

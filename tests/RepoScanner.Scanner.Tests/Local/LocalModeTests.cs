@@ -20,7 +20,13 @@ namespace RepoScanner.Scanner.Tests.Local
         // Satisfies the start-up check; SQL Server is swapped out, so nothing ever connects to it
         private static readonly string[] DatabaseArgs = { "--Scanner:Database:ConnectionString", "Server=unused;Database=unused" };
 
+        // The file deleted and restored in the Issue 4 tests: it holds two of the fixture's secrets
+        private const string DeletedFile = "deploy/publish.ps1";
+
         private SqliteTestDatabase _database = null!;
+
+        // Temporary copies of the fixture, deleted after each test
+        private readonly List<string> _copies = new List<string>();
 
         [SetUp]
         public void SetUp()
@@ -32,6 +38,13 @@ namespace RepoScanner.Scanner.Tests.Local
         public void TearDown()
         {
             _database.Dispose();
+
+            foreach (string copy in _copies.Where(Directory.Exists))
+            {
+                Directory.Delete(copy, recursive: true);
+            }
+
+            _copies.Clear();
         }
 
         // Issue 3 acceptance criterion 1: running against the fixture writes the expected findings to
@@ -83,7 +96,7 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
-        // Design decision 2: the demo can be run as often as needed
+        // Issue 4 success criterion 1: a second run against an unchanged fixture creates zero new findings
         [Test]
         public async Task Path_OnTheFixtureTwice_AddsNothingTheSecondTime()
         {
@@ -99,6 +112,88 @@ namespace RepoScanner.Scanner.Tests.Local
                     Assert.That(context.ScanRuns.OrderBy(run => run.Id).Select(run => run.NewCount),
                         Is.EqualTo(new int[] { FixtureSecrets.All.Count, 0 }));
                 }
+            }
+        }
+
+        // Issue 4 success criterion 2: removing a planted secret resolves it
+        [Test]
+        public async Task Path_AfterAFileWithSecretsIsDeleted_ResolvesItsFindings()
+        {
+            string folder = CopyOfTheFixture();
+            await RunAsync("--path", folder);
+
+            File.Delete(Path.Combine(folder, DeletedFile));
+            (int exitCode, _) = await RunAsync("--path", folder);
+
+            List<Finding> findings = SavedFindings();
+            List<Finding> deleted = findings.Where(finding => finding.FilePath == DeletedFile).ToList();
+            int deletedCount = FixtureSecrets.All.Count(secret => secret.FilePath == DeletedFile);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(0));
+                Assert.That(findings, Has.Count.EqualTo(FixtureSecrets.All.Count));
+                Assert.That(deleted, Has.Count.EqualTo(deletedCount));
+                Assert.That(deleted.Select(finding => finding.Status), Is.All.EqualTo(FindingStatus.Resolved));
+                Assert.That(deleted.Select(finding => finding.Events.Count(saved => saved.EventType == FindingEventType.Resolved)), Is.All.EqualTo(1));
+                Assert.That(findings.Except(deleted).Select(finding => finding.Status), Is.All.EqualTo(FindingStatus.Open));
+                Assert.That(LastRun().ResolvedCount, Is.EqualTo(deletedCount));
+            }
+        }
+
+        [Test]
+        public async Task Path_AfterADeletedFileIsRestored_ReopensItsFindings()
+        {
+            string folder = CopyOfTheFixture();
+            string file = Path.Combine(folder, DeletedFile);
+            string aside = Path.Combine(Path.GetDirectoryName(folder)!, "publish.ps1");
+
+            await RunAsync("--path", folder);
+            File.Move(file, aside);
+            await RunAsync("--path", folder);
+            File.Move(aside, file);
+            (int exitCode, _) = await RunAsync("--path", folder);
+
+            List<Finding> reopened = SavedFindings().Where(finding => finding.FilePath == DeletedFile).ToList();
+            FindingEventType[] history = { FindingEventType.Detected, FindingEventType.Resolved, FindingEventType.Reopened };
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(0));
+                Assert.That(reopened, Has.Count.EqualTo(FixtureSecrets.All.Count(secret => secret.FilePath == DeletedFile)));
+                Assert.That(reopened.Select(finding => finding.Status), Is.All.EqualTo(FindingStatus.Open));
+                Assert.That(reopened.Select(finding => finding.Events.OrderBy(saved => saved.Id).Select(saved => saved.EventType)), Is.All.EqualTo(history));
+                Assert.That(LastRun().ReopenedCount, Is.EqualTo(reopened.Count));
+                Assert.That(LastRun().NewCount, Is.Zero);
+            }
+        }
+
+        // Issue 4 success criterion 3: a suppressed finding stays suppressed
+        [Test]
+        public async Task Path_OnTheFixtureAgain_KeepsASuppressedFindingSuppressed()
+        {
+            await RunAsync("--path", FixtureSecrets.FolderPath);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                // What the dashboard does when a developer suppresses a finding (ADR-019)
+                Finding finding = context.Findings.First(saved => saved.RuleId == "SEC003");
+                finding.Status = FindingStatus.Suppressed;
+                finding.SuppressedUntilUtc = DateTime.UtcNow.AddDays(14);
+                finding.SuppressedBy = "dev@example.com";
+                finding.SuppressionReason = "Test value in a sample file";
+                context.SaveChanges();
+            }
+
+            await RunAsync("--path", FixtureSecrets.FolderPath);
+
+            Finding suppressed = SavedFindings().Single(saved => saved.RuleId == "SEC003");
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(suppressed.Status, Is.EqualTo(FindingStatus.Suppressed));
+                Assert.That(suppressed.Events.Single().EventType, Is.EqualTo(FindingEventType.Detected));
+                Assert.That(LastRun().ResolvedCount, Is.Zero);
             }
         }
 
@@ -177,6 +272,32 @@ namespace RepoScanner.Scanner.Tests.Local
                     .ThenBy(finding => finding.LineNumber)
                     .ToList();
             }
+        }
+
+        private ScanRun LastRun()
+        {
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                return context.ScanRuns.OrderBy(run => run.Id).Last();
+            }
+        }
+
+        // A copy of the fixture in a new temporary folder, so a test can delete and restore its files.
+        // The copy sits one level down, so a file moved aside is outside the scanned folder.
+        private string CopyOfTheFixture()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "reposcanner-tests", Guid.NewGuid().ToString("N"));
+            string folder = Path.Combine(root, "secrets-repo");
+            _copies.Add(root);
+
+            foreach (string source in Directory.EnumerateFiles(FixtureSecrets.FolderPath, "*", SearchOption.AllDirectories))
+            {
+                string target = Path.Combine(folder, Path.GetRelativePath(FixtureSecrets.FolderPath, source));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(source, target);
+            }
+
+            return folder;
         }
 
         private static void AssertExitTwoWithOneLine(int exitCode, string output)

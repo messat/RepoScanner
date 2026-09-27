@@ -135,7 +135,8 @@ dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/secrets-re
 
 - The folder is saved in `Repositories` with the project name `Local`, and each scan as a row in `ScanRuns`.
 - Each finding has a masked preview and a SHA-256 hash of the secret. The secret itself is never saved or logged ([ADR-023](docs/adr/ADR-023-secret-hash-is-an-unsalted-sha-256.md)).
-- Running the same folder again adds only findings that are not already stored. Resolving and reopening findings comes with Issue 4.
+- Running the same folder again updates the findings already stored rather than adding them twice: each keeps its row, with its line and last-seen time updated. A finding no longer found is marked `Resolved`, one found again after that is reopened, and a suppressed one stays suppressed until its date passes. Each change is recorded in `FindingEvents`, and the counts in the run's `ScanRuns` row ([Issue 4 design](docs/design/2026-09-27-findings-reconciliation.md)).
+- Only the secret scanner runs in local mode, so findings of other scanner types are never resolved by it ([ADR-025](docs/adr/ADR-025-auto-resolve-only-for-scanners-that-completed.md)).
 - Folders named `.git`, `bin`, `obj`, `node_modules`, `packages`, `.vs` and `TestResults`, files over 1 MB, binary files, symbolic links and files that cannot be opened are skipped.
 - So is any folder below the scanned one that contains a `.reposcanner-exclude` file. RepoScanner's own test data has one, so its fake secrets are not reported when this repository is scanned.
 - `tests/fixtures/secrets-repo` is a pretend repository whose secrets are all fake, for trying the scanner out.

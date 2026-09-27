@@ -2,7 +2,7 @@
 
 Each file records one decision: the context that forced it, what was decided, and what follows from it.
 
-ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADRs v2*, which is canonical for those numbers. ADR-020 onwards were decided while building this repository. The next new ADR is **ADR-024**.
+ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADRs v2*, which is canonical for those numbers. ADR-020 onwards were decided while building this repository. The next new ADR is **ADR-026**.
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -29,6 +29,8 @@ ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADR
 | [ADR-021](ADR-021-explicit-csharp-style-and-build-conventions.md) | Explicit C# style and build conventions, enforced by the build | Accepted |
 | [ADR-022](ADR-022-one-options-class-per-configuration-group.md) | One options class per configuration group, validated at start-up | Accepted |
 | [ADR-023](ADR-023-secret-hash-is-an-unsalted-sha-256.md) | The secret hash is an unsalted SHA-256 | Accepted |
+| [ADR-024](ADR-024-fingerprint-per-scanner-without-line-numbers.md) | A fingerprint per scanner type, without line numbers | Accepted |
+| [ADR-025](ADR-025-auto-resolve-only-for-scanners-that-completed.md) | Only a scanner that completed can resolve its findings | Accepted |
 
 ## Writing a new ADR
 
