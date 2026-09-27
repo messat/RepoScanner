@@ -110,8 +110,8 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
-        // Design decision 2 (interim): a second run of the same folder adds nothing, rather than failing
-        // on the unique fingerprint
+        // Issue 4 success criterion 1: a second run of the same folder adds nothing, rather than failing on
+        // the unique fingerprint
         [Test]
         public async Task RunAsync_OnTheSameFolderTwice_AddsNothingTheSecondTime()
         {
@@ -144,6 +144,122 @@ namespace RepoScanner.Scanner.Tests.Local
                 {
                     Assert.That(context.Findings.Single().LineNumber, Is.EqualTo(2));
                     Assert.That(context.ScanRuns.Single().NewCount, Is.EqualTo(1));
+                }
+            }
+        }
+
+        // A finding seen again keeps its row: only the line it is now on and when it was last seen change
+        [Test]
+        public async Task RunAsync_WhenAFindingIsFoundAgain_UpdatesItsLineAndLastSeen()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")));
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 7, "hash-a")));
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                Finding finding = context.Findings.Include(saved => saved.Events).Single();
+                ScanRun second = context.ScanRuns.OrderBy(run => run.Id).Last();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(finding.LineNumber, Is.EqualTo(7));
+                    Assert.That(finding.LastSeenUtc, Is.GreaterThanOrEqualTo(second.StartedUtc));
+                    Assert.That(finding.Status, Is.EqualTo(FindingStatus.Open));
+                    Assert.That(finding.Events.Single().EventType, Is.EqualTo(FindingEventType.Detected));
+                }
+            }
+        }
+
+        // Issue 4 success criterion 2, with a stub scanner
+        [Test]
+        public async Task RunAsync_WhenAFindingIsNoLongerFound_ResolvesIt()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")));
+            await RunAsync(new StubScanner());
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                Finding finding = context.Findings.Include(saved => saved.Events).Single();
+                ScanRun second = context.ScanRuns.OrderBy(run => run.Id).Last();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(finding.Status, Is.EqualTo(FindingStatus.Resolved));
+                    Assert.That(finding.ResolvedUtc, Is.Not.Null);
+                    Assert.That(EventTypes(finding), Is.EqualTo(new[] { FindingEventType.Detected, FindingEventType.Resolved }));
+                    Assert.That(finding.Events.Single(saved => saved.EventType == FindingEventType.Resolved).ScanRunId, Is.EqualTo(second.Id));
+                    Assert.That(second.ResolvedCount, Is.EqualTo(1));
+                    Assert.That(second.NewCount, Is.Zero);
+                }
+            }
+        }
+
+        [Test]
+        public async Task RunAsync_WhenAResolvedFindingIsFoundAgain_ReopensIt()
+        {
+            RawFinding raw = Raw("SEC003", "src/appsettings.json", 3, "hash-a");
+
+            await RunAsync(new StubScanner(raw));
+            await RunAsync(new StubScanner());
+            await RunAsync(new StubScanner(raw));
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                Finding finding = context.Findings.Include(saved => saved.Events).Single();
+                ScanRun third = context.ScanRuns.OrderBy(run => run.Id).Last();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(finding.Status, Is.EqualTo(FindingStatus.Open));
+                    Assert.That(finding.ResolvedUtc, Is.Null);
+                    Assert.That(EventTypes(finding), Is.EqualTo(new[] { FindingEventType.Detected, FindingEventType.Resolved, FindingEventType.Reopened }));
+                    Assert.That(third.ReopenedCount, Is.EqualTo(1));
+                    Assert.That(third.NewCount, Is.Zero);
+                }
+            }
+        }
+
+        // Issue 4 success criterion 3: a suppression set in the dashboard survives the next scan
+        [Test]
+        public async Task RunAsync_WhenAFindingIsSuppressed_KeepsItSuppressed()
+        {
+            RawFinding raw = Raw("SEC003", "src/appsettings.json", 3, "hash-a");
+
+            await RunAsync(new StubScanner(raw));
+            SuppressTheFinding(DateTime.UtcNow.AddDays(14));
+            await RunAsync(new StubScanner(raw));
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                Finding finding = context.Findings.Include(saved => saved.Events).Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(finding.Status, Is.EqualTo(FindingStatus.Suppressed));
+                    Assert.That(finding.SuppressionReason, Is.EqualTo("Test value in a sample file"));
+                    Assert.That(EventTypes(finding), Is.EqualTo(new[] { FindingEventType.Detected }));
+                }
+            }
+        }
+
+        // Rule 7 in local mode: only the scanners that ran can resolve, so a package finding, which local
+        // mode's secret scanner could never have seen, is left alone (ADR-025)
+        [Test]
+        public async Task RunAsync_LeavesTheFindingsOfScannersThatDidNotRunAlone()
+        {
+            await RunAsync(new StubScanner());
+            AddAPackageFinding();
+            await RunAsync(new StubScanner());
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                Finding finding = context.Findings.Include(saved => saved.Events).Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(finding.Status, Is.EqualTo(FindingStatus.Open));
+                    Assert.That(finding.Events, Is.Empty);
+                    Assert.That(context.ScanRuns.OrderBy(run => run.Id).Last().ResolvedCount, Is.Zero);
                 }
             }
         }
@@ -207,6 +323,26 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
+        // The same for resolved and reopened findings
+        [Test]
+        public async Task RunAsync_LogsEachResolvedAndReopenedFindingWithoutItsPreview()
+        {
+            RawFinding raw = Raw("SEC003", "src/appsettings.json", 3, "hash-a");
+
+            await RunAsync(new StubScanner(raw));
+            await RunAsync(new StubScanner());
+            await RunAsync(new StubScanner(raw));
+
+            string[] messages = _logger.Collector.GetSnapshot().Select(record => record.Message).ToArray();
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(messages, Has.One.EqualTo("Resolved finding SEC003 in src/appsettings.json at line 3"));
+                Assert.That(messages, Has.One.EqualTo("Reopened finding SEC003 in src/appsettings.json at line 3"));
+                Assert.That(messages, Has.None.Contains("FAKE****"));
+            }
+        }
+
         // Review focus: however the folder is written, it is the same Repositories row
         [Test]
         public void DescribeFolder_GivesTheSameIdHoweverTheFolderIsWritten()
@@ -239,6 +375,50 @@ namespace RepoScanner.Scanner.Tests.Local
 
                 await runner.RunAsync(Folder, CancellationToken.None);
             }
+        }
+
+        // What the dashboard does when a developer suppresses a finding (ADR-019)
+        private void SuppressTheFinding(DateTime suppressedUntilUtc)
+        {
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                Finding finding = context.Findings.Single();
+                finding.Status = FindingStatus.Suppressed;
+                finding.SuppressedUntilUtc = suppressedUntilUtc;
+                finding.SuppressedBy = "dev@example.com";
+                finding.SuppressionReason = "Test value in a sample file";
+                context.SaveChanges();
+            }
+        }
+
+        // A package finding for the scanned folder, as the package scanner (Issue 7) would one day save it
+        private void AddAPackageFinding()
+        {
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                context.Findings.Add(new Finding
+                {
+                    RepositoryId = context.Repositories.Single().Id,
+                    Fingerprint = "package-finding",
+                    ScannerType = ScannerType.Package,
+                    RuleId = "PKG001",
+                    Severity = Severity.High,
+                    FilePath = "src/Api/Api.csproj",
+                    Message = "Vulnerable package",
+                    PackageName = "Newtonsoft.Json",
+                    PackageVersion = "12.0.1",
+                    AdvisoryUrl = "https://github.com/advisories/GHSA-5crp-9r3c-p9vr",
+                    FirstSeenUtc = DateTime.UtcNow,
+                    LastSeenUtc = DateTime.UtcNow
+                });
+                context.SaveChanges();
+            }
+        }
+
+        // In the order they happened
+        private static FindingEventType[] EventTypes(Finding finding)
+        {
+            return finding.Events.OrderBy(saved => saved.Id).Select(saved => saved.EventType).ToArray();
         }
 
         // A secret finding as SecretScanner would report it; the hash stands in for a real one
