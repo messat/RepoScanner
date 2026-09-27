@@ -22,7 +22,7 @@ The fingerprint is the SHA-256 of the finding's parts joined with `|`, as UTF-8,
 
 - The line number, message, severity and masked preview are never part of it: they describe a finding, they do not identify it.
 - NuGet package IDs ignore case, so the package name is lower-cased.
-- The code-pattern scanner (Issue 8) supplies the hash of the matched code in `RawFinding.SnippetHash`, and decides how the code is tidied before it is hashed. The hash is not stored: the fingerprint carries it.
+- The code-pattern scanner (Issue 6) supplies the hash of the matched code in `RawFinding.SnippetHash`, and decides how the code is tidied before it is hashed. The hash is not stored: the fingerprint carries it.
 - A finding without one of its parts is a scanner bug, and is refused rather than saved.
 
 Two differences from the spike document:
@@ -36,4 +36,4 @@ A finding keeps its fingerprint when code above it changes, so its suppression a
 
 Renaming or moving a file changes the fingerprints of its findings: they are resolved and found again as new, and their suppressions do not follow. The spike document accepts this rather than solving it. Because the version is a part, upgrading a package to another vulnerable version resolves the old finding and opens a new one, which is correct: it is a different advisory to check.
 
-Changing any formula, or how Issue 8 tidies the code, changes existing fingerprints in the same way: every affected finding is resolved and found again as new, and loses its suppression. Such a change needs a new ADR that says so.
+Changing any formula, or how Issue 6 tidies the code, changes existing fingerprints in the same way: every affected finding is resolved and found again as new, and loses its suppression. Such a change needs a new ADR that says so.

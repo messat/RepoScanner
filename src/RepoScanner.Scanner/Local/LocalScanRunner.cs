@@ -17,7 +17,7 @@ using RepoScanner.Scanner.Reconciliation;
 namespace RepoScanner.Scanner.Local
 {
     // Runs the scanners on a folder on this machine and reconciles what they find with the findings
-    // already stored for it (--path, #20 and #26): no queue and no clone. The queue loop arrives in Issue 5.
+    // already stored for it (--path, #20 and #26): no queue and no clone. The queue loop arrives in Issue 7.
     public sealed class LocalScanRunner
     {
         // Local folders are kept under this project name, so they are easy to tell apart from Azure
@@ -36,7 +36,7 @@ namespace RepoScanner.Scanner.Local
             _scanRuns = scanRuns;
             _findings = findings;
 
-            // Every registered scanner: only SecretScanner in Issue 3, all three once Issues 7 and 8
+            // Every registered scanner: only SecretScanner in Issue 3, all three once Issues 5 and 6
             // register theirs. Asking for a single IScanner would silently get the last one registered.
             _scanners = scanners.ToList();
             _logger = logger;
@@ -119,7 +119,7 @@ namespace RepoScanner.Scanner.Local
             IReadOnlyList<Finding> stored = await _findings.GetByRepositoryAsync(scanRun.RepositoryId, cancellationToken);
 
             // Every scanner that ran has completed, because one that throws fails the whole run before
-            // anything is saved (Issue 4 design, decision 3). Issue 5 (#31) carries on after a failure,
+            // anything is saved (Issue 4 design, decision 3). Issue 5 (#74) carries on after a failure,
             // and passes only the scanners that succeeded (ADR-025).
             HashSet<ScannerType> completedScannerTypes = new HashSet<ScannerType>(_scanners.Select(scanner => scanner.ScannerType));
 

@@ -29,14 +29,14 @@ namespace RepoScanner.Core.Scanning
         // Secret findings only: SHA-256 of the secret in hex (ADR-023)
         public string? SecretHash { get; init; }
 
-        // Package findings only (Issue 7)
+        // Package findings only (Issue 5)
         public string? PackageName { get; init; }
 
         public string? PackageVersion { get; init; }
 
         public string? AdvisoryUrl { get; init; }
 
-        // Code-pattern findings only (Issue 8): SHA-256 of the matched code, which identifies the finding
+        // Code-pattern findings only (Issue 6): SHA-256 of the matched code, which identifies the finding
         // without its line number (ADR-024). Not stored: the fingerprint carries it.
         public string? SnippetHash { get; init; }
     }

@@ -26,9 +26,9 @@ From Issue 4 (#22):
 |---|---|---|---|
 | 1 | Where the rules come from | The spike document's Data model section, copied under Reconciliation rules below | See Purpose |
 | 2 | The same secret twice in one file | One finding | The fix for a leaked secret is to change it, not to remove copies. The spike document numbers each copy, but then deleting the first copy gives the second its number, and a suppression can land on the wrong copy: the line-number problem again. Recorded in ADR-024 |
-| 3 | How much of the failed-scanner rule Issue 4 builds | The rule in the reconciler only. `LocalScanRunner` still fails the whole run when a scanner throws | Carrying on after one scanner fails is Issue 5, task #31. Today a failure stops the run before anything is resolved, so nothing is wrongly resolved |
+| 3 | How much of the failed-scanner rule Issue 4 builds | The rule in the reconciler only. `LocalScanRunner` still fails the whole run when a scanner throws | Carrying on after one scanner fails is Issue 5, task #74. Today a failure stops the run before anything is resolved, so nothing is wrongly resolved |
 | 4 | A suppressed finding that is no longer found | Resolved | Not in the code means fixed, whatever the status. Left suppressed, it would return to Open when its date passed, for code that no longer exists |
-| 5 | Which scanner types #23 covers | All three | #23 asks for each type. All the identity rules are in one class and one ADR, and Issues 7 and 8 only fill in their fields |
+| 5 | Which scanner types #23 covers | All three | #23 asks for each type. All the identity rules are in one class and one ADR, and Issues 5 and 6 only fill in their fields |
 | 6 | The secret formula | Unchanged from Issue 3: `RuleId`, `FilePath`, `SecretHash` | Findings already saved still match, so no local database needs clearing |
 | 7 | The repository in the fingerprint | Left out | The unique index is already `(RepositoryId, Fingerprint)`, and decision 6 |
 | 8 | What records "last seen" | `LastSeenUtc`, as Issue 2 built it, not the spike's `LastSeenScanRunId` | No migration. The events hold the run IDs |
@@ -38,7 +38,7 @@ From Issue 4 (#22):
 | 12 | A finding resolved in the dashboard but still in the code | Reopened by the next scan | Rule 4 applies whoever resolved it. The scan is what knows what is in the code |
 | 13 | The shape of the reconciler | A static method: stored findings, raw findings and the run in; changes and counts out. No database inside | One test per rule, with no database (ADR-010). Same shape as `SecretHasher` |
 | 14 | Where the two classes live | `src/RepoScanner.Scanner/Reconciliation/` | Only the scanner reconciles. Core stays free of logic |
-| 15 | What identifies a code-pattern finding | A new `SnippetHash` on `RawFinding`, set by the code-pattern scanner. How the snippet is tidied before hashing is decided in Issue 8 | The spike's "hash of the normalised snippet". The scanner is where the code is read. It is not stored on `Finding`: the fingerprint carries it |
+| 15 | What identifies a code-pattern finding | A new `SnippetHash` on `RawFinding`, set by the code-pattern scanner. How the snippet is tidied before hashing is decided in Issue 6 | The spike's "hash of the normalised snippet". The scanner is where the code is read. It is not stored on `Finding`: the fingerprint carries it |
 | 16 | What identifies a package finding | `RuleId`, `FilePath`, `PackageName` in lower case, `PackageVersion`, `AdvisoryUrl` | The spike's "project path, package ID, version and advisory ID". `RawFinding` carries the advisory as its URL, and NuGet package IDs ignore case |
 | 17 | New ADR numbers | ADR-024 for the fingerprint (#27), ADR-025 for the per-scanner rule (#25) | The next free number is ADR-024 |
 | 18 | Where this document lives | `docs/design/` | Same as Issues 2 and 3 |
@@ -88,7 +88,7 @@ The identity is the finding's parts joined with `|`, hashed as UTF-8:
 - The line number is never part of it, so a finding that moves up or down the file keeps its fingerprint.
 - A missing required part throws `ArgumentException` naming it. That is a scanner bug, not something to save.
 - The secret formula is the one Issue 3's interim code used (decision 6), and a test proves the two give the same value.
-- `RawFinding.SnippetHash` is `string?`, "code-pattern findings only (Issue 8)", like the package properties.
+- `RawFinding.SnippetHash` is `string?`, "code-pattern findings only (Issue 6)", like the package properties.
 
 **ADR-024, added in #27: a fingerprint per scanner type, without line numbers.**
 
@@ -200,10 +200,10 @@ One task at a time, stopping after each for review, then a commit whose message 
 
 | Item | Where it is on the board |
 |---|---|
-| Carrying on after one scanner fails, and marking the run `PartiallyCompleted` | Issue 5, tasks #31 and #32, which pass the scanners that succeeded to the reconciler |
-| The package and code-pattern scanners, and how a code snippet is tidied before hashing | Issues 7 and 8 |
+| Carrying on after one scanner fails, and marking the run `PartiallyCompleted` | Issue 5, tasks #74 and #32, which pass the scanners that succeeded to the reconciler |
+| The package and code-pattern scanners, and how a code snippet is tidied before hashing | Issues 5 and 6 |
 | Suppressing and resolving in the dashboard, and its open-findings query | The dashboard, not this Epic |
-| The commit SHA on a scan run | Issue 6, task #38 |
+| The commit SHA on a scan run | Issue 8, task #38 |
 
 ## Known limitations
 

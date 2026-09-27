@@ -12,7 +12,7 @@ A scan resolves a stored finding when it no longer finds it (Issue 4, rule 3). A
 
 `FindingReconciler.Reconcile` is given `completedScannerTypes`: the scanner types that ran and succeeded in this run. A stored finding that was not found is resolved only if its own scanner type is in that set; otherwise it is left exactly as it was, with no event. Findings of the scanners that did complete are resolved as usual.
 
-In Issue 4, local mode passes every scanner it ran, because a scanner that throws still fails the whole run before anything is saved. From Issue 5 (task #31), the queue loop carries on after one scanner fails and passes only the scanners that succeeded.
+In Issue 4, local mode passes every scanner it ran, because a scanner that throws still fails the whole run before anything is saved. From Issue 5 (task #74), the scan carries on after one scanner fails and passes only the scanners that succeeded; the queue loop in Issue 7 reuses it.
 
 ## Consequences
 

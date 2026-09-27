@@ -391,7 +391,7 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
-        // A package finding for the scanned folder, as the package scanner (Issue 7) would one day save it
+        // A package finding for the scanned folder, as the package scanner (Issue 5) would one day save it
         private void AddAPackageFinding()
         {
             using (ScannerDbContext context = _database.CreateContext())
