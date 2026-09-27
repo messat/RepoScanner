@@ -22,15 +22,21 @@ namespace RepoScanner.Core.Tests.Scanning
             Assert.That(names, Is.EquivalentTo(new string[]
             {
                 "ScannerType", "RuleId", "Severity", "FilePath", "LineNumber", "Message",
-                "MaskedPreview", "SecretHash", "PackageName", "PackageVersion", "AdvisoryUrl"
+                "MaskedPreview", "SecretHash", "PackageName", "PackageVersion", "AdvisoryUrl", "SnippetHash"
             }));
         }
 
-        // Each property is copied onto a Finding of the same name when it is saved
+        // Each property is copied onto a Finding of the same name when it is saved, except SnippetHash, which
+        // only identifies a code-pattern finding and is carried by its fingerprint (Issue 4 design, decision 15)
         [Test]
         public void RawFinding_EachPropertyMatchesAFindingColumnOfTheSameType()
         {
-            foreach (PropertyInfo property in typeof(RawFinding).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            PropertyInfo[] saved = typeof(RawFinding)
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(property => property.Name != nameof(RawFinding.SnippetHash))
+                .ToArray();
+
+            foreach (PropertyInfo property in saved)
             {
                 PropertyInfo? column = typeof(Finding).GetProperty(property.Name);
 
