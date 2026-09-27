@@ -19,7 +19,13 @@ namespace RepoScanner.Scanner.Reconciliation
         // stored: every finding for the repository, whatever its status, as GetByRepositoryAsync returns
         // them. They are changed in place, so EF Core, which is tracking them, writes only the columns that
         // changed, and a suppression made in the dashboard meanwhile is kept.
-        public static ReconciliationResult Reconcile(IReadOnlyList<Finding> stored, IReadOnlyList<RawFinding> found, ScanRun scanRun, DateTime nowUtc)
+        // completedScannerTypes: the scanner types that ran and succeeded in this run (rule 7).
+        public static ReconciliationResult Reconcile(
+            IReadOnlyList<Finding> stored,
+            IReadOnlyList<RawFinding> found,
+            IReadOnlySet<ScannerType> completedScannerTypes,
+            ScanRun scanRun,
+            DateTime nowUtc)
         {
             // The unique index on (RepositoryId, Fingerprint) means one stored finding per fingerprint
             Dictionary<string, Finding> storedByFingerprint = stored.ToDictionary(finding => finding.Fingerprint, StringComparer.Ordinal);
@@ -80,6 +86,13 @@ namespace RepoScanner.Scanner.Reconciliation
             foreach (Finding finding in stored)
             {
                 if (seen.Contains(finding.Fingerprint) || finding.Status == FindingStatus.Resolved)
+                {
+                    continue;
+                }
+
+                // Rule 7: a scanner that failed or did not run found nothing, which is not the same as
+                // everything being fixed, so only a scanner that completed resolves its findings (ADR-025)
+                if (!completedScannerTypes.Contains(finding.ScannerType))
                 {
                     continue;
                 }

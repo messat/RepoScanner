@@ -79,19 +79,7 @@ namespace RepoScanner.Scanner.Tests.Reconciliation
         [Test]
         public void Reconcile_FoundAndNotStored_CopiesThePackageColumns()
         {
-            RawFinding package = new RawFinding
-            {
-                ScannerType = ScannerType.Package,
-                RuleId = "PKG001",
-                Severity = Severity.High,
-                FilePath = "src/Api/Api.csproj",
-                Message = "Vulnerable package",
-                PackageName = "Newtonsoft.Json",
-                PackageVersion = "12.0.1",
-                AdvisoryUrl = "https://github.com/advisories/GHSA-5crp-9r3c-p9vr"
-            };
-
-            Finding added = Reconcile(Array.Empty<Finding>(), package).Changes.NewFindings.Single();
+            Finding added = Reconcile(Array.Empty<Finding>(), PackageRaw()).Changes.NewFindings.Single();
 
             Assert.That(added.PackageName, Is.EqualTo("Newtonsoft.Json"));
             Assert.That(added.PackageVersion, Is.EqualTo("12.0.1"));
@@ -274,9 +262,66 @@ namespace RepoScanner.Scanner.Tests.Reconciliation
             yield return new TestCaseData(FindingStatus.Suppressed, EarlierUtc, true).SetArgDisplayNames("Rule 6");
         }
 
+        // Rule 7: a scanner that failed resolves nothing, while one that completed still resolves its own
+        // missing findings (Issue 4 success criterion 4, ADR-025)
+        [Test]
+        public void Reconcile_NotFoundAndItsScannerDidNotComplete_LeavesItAsItWas()
+        {
+            Finding secret = Stored(Raw(lineNumber: 3), FindingStatus.Open);
+            Finding package = Stored(PackageRaw(), FindingStatus.Open);
+            Finding suppressedPackage = Suppressed(Stored(PackageRaw() with { PackageName = "Humanizer.Core" }, FindingStatus.Suppressed), NowUtc.AddDays(7));
+
+            ReconciliationResult result = FindingReconciler.Reconcile(
+                new[] { secret, package, suppressedPackage },
+                Array.Empty<RawFinding>(),
+                new HashSet<ScannerType> { ScannerType.Secret },
+                Run,
+                NowUtc);
+
+            Assert.That(secret.Status, Is.EqualTo(FindingStatus.Resolved));
+            Assert.That(package.Status, Is.EqualTo(FindingStatus.Open));
+            Assert.That(package.ResolvedUtc, Is.Null);
+            Assert.That(suppressedPackage.Status, Is.EqualTo(FindingStatus.Suppressed));
+            Assert.That(result.Changes.UpdatedFindings, Is.EquivalentTo(new[] { secret }));
+            Assert.That(result.Changes.NewEvents.Select(findingEvent => findingEvent.FindingId), Is.EquivalentTo(new[] { secret.Id }));
+            Assert.That(result.ResolvedCount, Is.EqualTo(1));
+        }
+
+        // A scanner that did not run at all, such as the package scanner in local mode, is not in the set
+        // either, so its findings are never resolved by a scan that could not have seen them
+        [Test]
+        public void Reconcile_WhenNoScannerCompleted_ResolvesNothing()
+        {
+            Finding stored = Stored(Raw(lineNumber: 3), FindingStatus.Open);
+
+            ReconciliationResult result = FindingReconciler.Reconcile(new[] { stored }, Array.Empty<RawFinding>(), new HashSet<ScannerType>(), Run, NowUtc);
+
+            Assert.That(stored.Status, Is.EqualTo(FindingStatus.Open));
+            Assert.That(result.Changes.UpdatedFindings, Is.Empty);
+            Assert.That(result.Changes.NewEvents, Is.Empty);
+            Assert.That(result.ResolvedCount, Is.EqualTo(0));
+        }
+
+        // Rules 1 to 6, with every scanner type having completed
         private static ReconciliationResult Reconcile(IReadOnlyList<Finding> stored, params RawFinding[] found)
         {
-            return FindingReconciler.Reconcile(stored, found, Run, NowUtc);
+            HashSet<ScannerType> allScannerTypes = new HashSet<ScannerType>(Enum.GetValues<ScannerType>());
+            return FindingReconciler.Reconcile(stored, found, allScannerTypes, Run, NowUtc);
+        }
+
+        private static RawFinding PackageRaw()
+        {
+            return new RawFinding
+            {
+                ScannerType = ScannerType.Package,
+                RuleId = "PKG001",
+                Severity = Severity.High,
+                FilePath = "src/Api/Api.csproj",
+                Message = "Vulnerable package",
+                PackageName = "Newtonsoft.Json",
+                PackageVersion = "12.0.1",
+                AdvisoryUrl = "https://github.com/advisories/GHSA-5crp-9r3c-p9vr"
+            };
         }
 
         // Every event the scanner writes names the run, the time and the scanner as the actor
