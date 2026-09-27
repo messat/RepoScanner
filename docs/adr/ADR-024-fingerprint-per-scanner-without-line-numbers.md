@@ -1,0 +1,39 @@
+# ADR-024: A fingerprint per scanner type, without line numbers
+
+- **Status:** Accepted
+- **Date:** 2026-09-27
+- **Source:** Decided while implementing Issue 4 (#22), task #27
+
+## Context
+
+Each scan compares what it found with the findings already stored for the repository (Issue 4). For that, a finding needs an identity that stays the same from one scan to the next, so its status, suppression (ADR-019) and history stay on one row. The `Findings` table holds that identity in `Fingerprint`, unique per repository (Issue 2 design).
+
+Line numbers cannot be part of it: adding one line near the top of a file moves every finding below it, and each would look new, leaving its suppression behind on a row that is then resolved. *Code Repo Analysis Dashboard, Spike Findings & ADRs v2* (Data model, "Three reasoning points") sets out what identifies a finding for each scanner.
+
+## Decision
+
+The fingerprint is the SHA-256 of the finding's parts joined with `|`, as UTF-8, written as 64 lower-case hex characters. `FingerprintCalculator` in RepoScanner.Scanner computes it.
+
+| Scanner | Parts, in order |
+|---|---|
+| Secret | Rule ID, file path, the secret's hash (ADR-023) |
+| Package | Rule ID, project file path, package name in lower case, package version, advisory URL |
+| Code pattern | Rule ID, file path, the hash of the matched code |
+
+- The line number, message, severity and masked preview are never part of it: they describe a finding, they do not identify it.
+- NuGet package IDs ignore case, so the package name is lower-cased.
+- The code-pattern scanner (Issue 8) supplies the hash of the matched code in `RawFinding.SnippetHash`, and decides how the code is tidied before it is hashed. The hash is not stored: the fingerprint carries it.
+- A finding without one of its parts is a scanner bug, and is refused rather than saved.
+
+Two differences from the spike document:
+
+- **The repository is not a part.** The unique index is on `(RepositoryId, Fingerprint)`, so the same fingerprint in two repositories is already two findings.
+- **A secret has no occurrence number, so the same secret twice in one file is one finding.** The fix for a leaked secret is to change it, not to remove its copies. An occurrence number depends on the order of the copies: deleting the first gives the second its number, so a suppression could move to a different copy.
+
+## Consequences
+
+A finding keeps its fingerprint when code above it changes, so its suppression and history follow it. The secret formula is the one Issue 3's interim code used, so findings already saved keep their fingerprints.
+
+Renaming or moving a file changes the fingerprints of its findings: they are resolved and found again as new, and their suppressions do not follow. The spike document accepts this rather than solving it. Because the version is a part, upgrading a package to another vulnerable version resolves the old finding and opens a new one, which is correct: it is a different advisory to check.
+
+Changing any formula, or how Issue 8 tidies the code, changes existing fingerprints in the same way: every affected finding is resolved and found again as new, and loses its suppression. Such a change needs a new ADR that says so.
