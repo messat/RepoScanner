@@ -1,0 +1,73 @@
+{
+  "@id": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json",
+  "@type": [
+    "catalog:CatalogRoot",
+    "PackageRegistration",
+    "catalog:Permalink"
+  ],
+  "commitId": "e713ce4d-02d9-456e-a8d6-3f5c59b7ee9e",
+  "commitTimeStamp": "2026-09-08T19:50:03.3534792+00:00",
+  "count": 1,
+  "items": [
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/page/4.0.0-beta-23409/7.0.0-preview.4.22229.4.json",
+      "@type": "catalog:CatalogPage",
+      "commitId": "51b61be7-b60c-4209-bd2a-6cea7a2aff6b",
+      "commitTimeStamp": "2026-05-12T17:57:55.5886097+00:00",
+      "count": 64,
+      "lower": "4.0.0-beta-23409",
+      "upper": "7.0.0-preview.4.22229.4"
+    }
+  ],
+  "@context": {
+    "@vocab": "http://schema.nuget.org/schema#",
+    "catalog": "http://schema.nuget.org/catalog#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "items": {
+      "@id": "catalog:item",
+      "@container": "@set"
+    },
+    "commitTimeStamp": {
+      "@id": "catalog:commitTimeStamp",
+      "@type": "xsd:dateTime"
+    },
+    "commitId": {
+      "@id": "catalog:commitId"
+    },
+    "count": {
+      "@id": "catalog:count"
+    },
+    "parent": {
+      "@id": "catalog:parent",
+      "@type": "@id"
+    },
+    "tags": {
+      "@id": "tag",
+      "@container": "@set"
+    },
+    "reasons": {
+      "@container": "@set"
+    },
+    "packageTargetFrameworks": {
+      "@id": "packageTargetFramework",
+      "@container": "@set"
+    },
+    "dependencyGroups": {
+      "@id": "dependencyGroup",
+      "@container": "@set"
+    },
+    "dependencies": {
+      "@id": "dependency",
+      "@container": "@set"
+    },
+    "packageContent": {
+      "@type": "@id"
+    },
+    "published": {
+      "@type": "xsd:dateTime"
+    },
+    "registration": {
+      "@type": "@id"
+    }
+  }
+}

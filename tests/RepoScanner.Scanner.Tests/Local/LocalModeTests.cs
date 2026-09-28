@@ -9,6 +9,7 @@ using RepoScanner.Core.Entities;
 using RepoScanner.Core.Enums;
 using RepoScanner.Data;
 using RepoScanner.Scanner.Secrets;
+using RepoScanner.Scanner.Tests.Packages;
 using RepoScanner.Scanner.Tests.Secrets;
 
 namespace RepoScanner.Scanner.Tests.Local
@@ -25,6 +26,9 @@ namespace RepoScanner.Scanner.Tests.Local
 
         private SqliteTestDatabase _database = null!;
 
+        // In place of nuget.org for the package scanner, so no test here reaches the internet
+        private FakeNuGet _nuGet = null!;
+
         // Temporary copies of the fixture, deleted after each test
         private readonly List<string> _copies = new List<string>();
 
@@ -32,12 +36,15 @@ namespace RepoScanner.Scanner.Tests.Local
         public void SetUp()
         {
             _database = new SqliteTestDatabase();
+            _nuGet = new FakeNuGet();
         }
 
         [TearDown]
         public void TearDown()
         {
             _database.Dispose();
+            _nuGet.Dispose();
+            Assert.That(_nuGet.UnknownAddresses, Is.Empty, "requests that would have reached the internet");
 
             foreach (string copy in _copies.Where(Directory.Exists))
             {
@@ -74,23 +81,29 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
+        // Both scanners run (Issue 5, #46). The secrets fixture has no project files, so the package scanner
+        // succeeds with nothing to report and asks nuget.org nothing.
         [Test]
-        public async Task Path_OnTheFixture_CompletesTheRunWithOneSucceededSecretScannerResult()
+        public async Task Path_OnTheFixture_CompletesTheRunWithASucceededResultForEachScanner()
         {
             await RunAsync("--path", FixtureSecrets.FolderPath);
 
             using (ScannerDbContext context = _database.CreateContext())
             {
                 ScanRun run = context.ScanRuns.Include(saved => saved.ScannerResults).Single();
-                ScannerResult result = run.ScannerResults.Single();
+                ScannerResult secrets = run.ScannerResults.Single(result => result.ScannerType == ScannerType.Secret);
+                ScannerResult packages = run.ScannerResults.Single(result => result.ScannerType == ScannerType.Package);
 
                 using (Assert.EnterMultipleScope())
                 {
                     Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Completed));
                     Assert.That(run.NewCount, Is.EqualTo(FixtureSecrets.All.Count));
-                    Assert.That(result.ScannerType, Is.EqualTo(ScannerType.Secret));
-                    Assert.That(result.Status, Is.EqualTo(ScannerStatus.Succeeded));
-                    Assert.That(result.FindingCount, Is.EqualTo(FixtureSecrets.All.Count));
+                    Assert.That(run.ScannerResults, Has.Count.EqualTo(2));
+                    Assert.That(secrets.Status, Is.EqualTo(ScannerStatus.Succeeded));
+                    Assert.That(secrets.FindingCount, Is.EqualTo(FixtureSecrets.All.Count));
+                    Assert.That(packages.Status, Is.EqualTo(ScannerStatus.Succeeded));
+                    Assert.That(packages.FindingCount, Is.Zero);
+                    Assert.That(_nuGet.Requests, Is.Empty);
                     Assert.That(context.Repositories.Single().ProjectName, Is.EqualTo("Local"));
                 }
             }
@@ -251,12 +264,78 @@ namespace RepoScanner.Scanner.Tests.Local
             AssertExitTwoWithOneLine(exitCode, output);
         }
 
+        // Issue 5 criterion 1, through the whole program: the package fixture's vulnerable packages and a file of
+        // fake secrets, both saved in one run
+        [Test]
+        public async Task Path_OnPackagesAndSecrets_SavesBothKindsOfFinding()
+        {
+            string folder = CopyOfThePackagesFixtureWithSecrets();
+
+            (int exitCode, _) = await RunAsync("--path", folder);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Include(saved => saved.ScannerResults).Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(exitCode, Is.EqualTo(0));
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Completed));
+                    Assert.That(run.ScannerResults.Select(result => result.Status), Is.All.EqualTo(ScannerStatus.Succeeded));
+                    Assert.That(context.Findings.Count(finding => finding.RuleId == "PKG001"), Is.EqualTo(FixturePackages.All.Count(package => package.RuleId == "PKG001")));
+                    Assert.That(context.Findings.Count(finding => finding.RuleId == "PKG002"), Is.EqualTo(FixturePackages.All.Count(package => package.RuleId == "PKG002")));
+                    Assert.That(context.Findings.Where(finding => finding.ScannerType == ScannerType.Secret).Select(finding => finding.RuleId),
+                        Is.EquivalentTo(new[] { "SEC004", "SEC006" }));
+                }
+            }
+        }
+
+        // Issue 5 criteria 2 and 3, and Issue 4's fourth criterion end to end (#47): with nuget.org down the run is
+        // PartiallyCompleted, not Failed; the removed secrets are resolved, because the secret scanner looked; the
+        // package findings stay Open, because the package scanner could not look (ADR-025)
+        [Test]
+        public async Task Path_WhenNuGetOrgGoesDown_IsPartiallyCompletedAndOnlyTheSecretsResolve()
+        {
+            string folder = CopyOfThePackagesFixtureWithSecrets();
+            await RunAsync("--path", folder);
+
+            File.Delete(Path.Combine(folder, DeletedFile));
+            _nuGet.Fail();
+            (int exitCode, string output) = await RunAsync("--path", folder);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Include(saved => saved.ScannerResults).OrderBy(saved => saved.Id).Last();
+                ScannerResult packages = run.ScannerResults.Single(result => result.ScannerType == ScannerType.Package);
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(exitCode, Is.EqualTo(0));
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.PartiallyCompleted));
+                    Assert.That(run.ErrorMessage, Does.StartWith("Package scanner failed: nuget.org data could not be downloaded from https://api.nuget.org/v3/index.json"));
+                    Assert.That(run.ResolvedCount, Is.EqualTo(2));
+                    Assert.That(packages.Status, Is.EqualTo(ScannerStatus.Failed));
+                    Assert.That(run.ScannerResults.Single(result => result.ScannerType == ScannerType.Secret).Status, Is.EqualTo(ScannerStatus.Succeeded));
+                    Assert.That(context.Findings.Where(finding => finding.ScannerType == ScannerType.Secret).Select(finding => finding.Status),
+                        Is.All.EqualTo(FindingStatus.Resolved));
+                    Assert.That(context.Findings.Where(finding => finding.ScannerType == ScannerType.Package).Select(finding => finding.Status),
+                        Is.All.EqualTo(FindingStatus.Open));
+                    Assert.That(context.Findings.Count(finding => finding.ScannerType == ScannerType.Package), Is.EqualTo(FixturePackages.All.Count));
+                    Assert.That(output, Does.Contain("partially completed"));
+                }
+            }
+        }
+
         private async Task<(int ExitCode, string Output)> RunAsync(params string[] args)
         {
             int exitCode = 0;
             string output = await ConsoleCapture.RunAsync(async () =>
             {
-                exitCode = await Program.RunAsync(args.Concat(DatabaseArgs).ToArray(), services => _database.ReplaceDatabaseIn(services));
+                exitCode = await Program.RunAsync(args.Concat(DatabaseArgs).ToArray(), services =>
+                {
+                    _database.ReplaceDatabaseIn(services);
+                    _nuGet.ReplaceNuGetOrg(services);
+                });
             });
 
             return (exitCode, output);
@@ -296,6 +375,28 @@ namespace RepoScanner.Scanner.Tests.Local
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 File.Copy(source, target);
             }
+
+            return folder;
+        }
+
+        // A copy of the packages fixture with the secrets fixture's deploy/publish.ps1 added, which holds two fake
+        // secrets (SEC004 and SEC006), so one folder gives both kinds of finding
+        private string CopyOfThePackagesFixtureWithSecrets()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "reposcanner-tests", Guid.NewGuid().ToString("N"));
+            string folder = Path.Combine(root, "packages-and-secrets");
+            _copies.Add(root);
+
+            foreach (string source in Directory.EnumerateFiles(FixturePackages.FolderPath, "*", SearchOption.AllDirectories))
+            {
+                string target = Path.Combine(folder, Path.GetRelativePath(FixturePackages.FolderPath, source));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(source, target);
+            }
+
+            string secrets = Path.Combine(folder, DeletedFile);
+            Directory.CreateDirectory(Path.GetDirectoryName(secrets)!);
+            File.Copy(Path.Combine(FixtureSecrets.FolderPath, DeletedFile), secrets);
 
             return folder;
         }

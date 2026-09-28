@@ -127,19 +127,42 @@ If `dotnet ef` says `Scanner__Database__ConnectionString` is not set, repeat ste
 
 ## Scan a local folder
 
-The scanner can scan a folder on your machine instead of reading the queue. It runs the secret scanner and saves the findings to the database in `Scanner:Database:ConnectionString`:
+The scanner can scan a folder on your machine instead of reading the queue. It runs the secret scanner, then the package scanner, and saves the findings to the database in `Scanner:Database:ConnectionString`:
 
 ```bash
 dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/secrets-repo
 ```
 
-- The folder is saved in `Repositories` with the project name `Local`, and each scan as a row in `ScanRuns`.
-- Each finding has a masked preview and a SHA-256 hash of the secret. The secret itself is never saved or logged ([ADR-023](docs/adr/ADR-023-secret-hash-is-an-unsalted-sha-256.md)).
+```bash
+dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/packages-repo
+```
+
+- The folder is saved in `Repositories` with the project name `Local`, and each scan as a row in `ScanRuns`, with one `ScannerResults` row per scanner.
+- Each secret finding has a masked preview and a SHA-256 hash of the secret. The secret itself is never saved or logged ([ADR-023](docs/adr/ADR-023-secret-hash-is-an-unsalted-sha-256.md)).
+- The package scanner reads the `.csproj` and `Directory.Packages.props` files, and reports each package version with a known vulnerability as a `PKG001` finding, with the advisory's severity and link. A floating version such as `12.0.*` is checked at the version a build would get. A version set centrally is reported once, on its `Directory.Packages.props` line ([Issue 5 design](docs/design/2026-09-27-nuget-vulnerability-scanner.md)).
+- It also reports each version nuget.org marks deprecated, whose author has stopped maintaining it, as a `PKG002` finding: High for critical bugs, Low for legacy or other reasons, with the package nuget.org suggests instead, if any, and the version's nuget.org page as its link.
+- The package scanner needs internet access to `api.nuget.org`: it downloads nuget.org's list of known vulnerabilities, and each package's metadata, once per run, and keeps them in memory only ([ADR-026](docs/adr/ADR-026-package-vulnerabilities-from-nuget-org-without-a-restore.md)). Nothing is written to the scanned folder.
 - Running the same folder again updates the findings already stored rather than adding them twice: each keeps its row, with its line and last-seen time updated. A finding no longer found is marked `Resolved`, one found again after that is reopened, and a suppressed one stays suppressed until its date passes. Each change is recorded in `FindingEvents`, and the counts in the run's `ScanRuns` row ([Issue 4 design](docs/design/2026-09-27-findings-reconciliation.md)).
-- Only the secret scanner runs in local mode, so findings of other scanner types are never resolved by it ([ADR-025](docs/adr/ADR-025-auto-resolve-only-for-scanners-that-completed.md)).
+- If one scanner fails, for example the package scanner because nuget.org cannot be reached, the other scanners carry on and their findings are saved. The run is then `PartiallyCompleted`: `ScanRuns.ErrorMessage` names the scanner that failed and why, and its `ScannerResults` row is `Failed`. A scanner that failed never resolves its own findings, so they keep their last status until it runs again ([ADR-025](docs/adr/ADR-025-auto-resolve-only-for-scanners-that-completed.md)). If every scanner fails, the run is `Failed`.
 - Folders named `.git`, `bin`, `obj`, `node_modules`, `packages`, `.vs` and `TestResults`, files over 1 MB, binary files, symbolic links and files that cannot be opened are skipped.
-- So is any folder below the scanned one that contains a `.reposcanner-exclude` file. RepoScanner's own test data has one, so its fake secrets are not reported when this repository is scanned.
-- `tests/fixtures/secrets-repo` is a pretend repository whose secrets are all fake, for trying the scanner out.
+- So is any folder below the scanned one that contains a `.reposcanner-exclude` file. RepoScanner's own test data has one, so its fake secrets and old packages are not reported when this repository is scanned.
+- `tests/fixtures/secrets-repo` and `tests/fixtures/packages-repo` are pretend repositories, for trying the scanners out: every secret in them is fake, and the packages are old versions on purpose.
+
+## Known limitations
+
+The package scanner:
+
+- **Checks only the packages the project files list directly.** Packages they depend on (transitive dependencies) are known only after a `dotnet restore`, which the scanner does not run ([ADR-026](docs/adr/ADR-026-package-vulnerabilities-from-nuget-org-without-a-restore.md)). A vulnerable package brought in by another package is not reported.
+- Does not read `Directory.Build.props`, `Directory.Build.targets` or imported files, ignores `Condition` attributes, and skips a version written as an MSBuild property, such as `$(JsonVersion)`.
+- Checks a package from a private feed only against nuget.org's advisories for a package with the same ID, and skips its floating versions, because nuget.org does not know it.
+- Checks a plain version as written. If that version does not exist, a build would use the next one up, which may differ.
+- Resolves a floating version from every version nuget.org lists, including unlisted ones that a build would skip.
+- Opens a new finding, and resolves the old one, when nuget.org publishes a version that a floating reference then picks; a suppression does not follow it ([ADR-024](docs/adr/ADR-024-fingerprint-per-scanner-without-line-numbers.md)).
+- Reports a version set in `Directory.Packages.props` on that file, without naming the projects that use it.
+- Leaves package findings as they were while nuget.org cannot be reached.
+- Checks deprecation for the exact version in use: nuget.org marks versions one by one, so a package whose author deprecated only older versions gives no `PKG002` for a newer one.
+- Names the alternative package nuget.org suggests, but does not check its version range, and does not store the author's own deprecation note; the version's nuget.org page shows it.
+- Reads deprecation from nuget.org only, so a package from a private feed is never reported as deprecated.
 
 ## Exit codes
 
@@ -147,8 +170,8 @@ The Container Apps Job reads the exit code to decide whether an execution succee
 
 | Code | Meaning |
 |---|---|
-| `0` | Success, or nothing to do |
-| `1` | Unexpected failure during the run (logged with the full exception) |
+| `0` | Success, or nothing to do. Also a run in which some scanners failed: it is saved as `PartiallyCompleted` and logged as a warning |
+| `1` | Unexpected failure during the run, or every scanner failed (logged with the full exception) |
 | `2` | Invalid configuration, or a `--path` that does not name an existing folder: the scanner did not start (logged as one line saying what is wrong) |
 
 To see exit code 2 locally, run without the Development settings:
@@ -180,7 +203,7 @@ tests/
   RepoScanner.Core.Tests/     NUnit tests for Core
   RepoScanner.Data.Tests/     NUnit tests for Data
   RepoScanner.Scanner.Tests/  NUnit tests for Scanner
-  fixtures/                   pretend repositories for the scanners' tests (every secret in them is fake)
+  fixtures/                   pretend repositories for the scanners' tests (every secret in them is fake, every package old on purpose)
 ```
 
 ## Conventions

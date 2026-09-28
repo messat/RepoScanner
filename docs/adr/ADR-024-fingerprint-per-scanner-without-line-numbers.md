@@ -22,7 +22,7 @@ The fingerprint is the SHA-256 of the finding's parts joined with `|`, as UTF-8,
 
 - The line number, message, severity and masked preview are never part of it: they describe a finding, they do not identify it.
 - NuGet package IDs ignore case, so the package name is lower-cased.
-- The code-pattern scanner (Issue 8) supplies the hash of the matched code in `RawFinding.SnippetHash`, and decides how the code is tidied before it is hashed. The hash is not stored: the fingerprint carries it.
+- The code-pattern scanner (Issue 6) supplies the hash of the matched code in `RawFinding.SnippetHash`, and decides how the code is tidied before it is hashed. The hash is not stored: the fingerprint carries it.
 - A finding without one of its parts is a scanner bug, and is refused rather than saved.
 
 Two differences from the spike document:
@@ -36,4 +36,10 @@ A finding keeps its fingerprint when code above it changes, so its suppression a
 
 Renaming or moving a file changes the fingerprints of its findings: they are resolved and found again as new, and their suppressions do not follow. The spike document accepts this rather than solving it. Because the version is a part, upgrading a package to another vulnerable version resolves the old finding and opens a new one, which is correct: it is a different advisory to check.
 
-Changing any formula, or how Issue 8 tidies the code, changes existing fingerprints in the same way: every affected finding is resolved and found again as new, and loses its suppression. Such a change needs a new ADR that says so.
+Changing any formula, or how Issue 6 tidies the code, changes existing fingerprints in the same way: every affected finding is resolved and found again as new, and loses its suppression. Such a change needs a new ADR that says so.
+
+## Amendments
+
+**2026-09-27 (Issue 5, #43):** For a package, the file path is the file where the version is set: the `.csproj`, or `Directory.Packages.props` when the version is set centrally (Central Package Management). One vulnerable version set centrally is then one finding, in the place it is fixed, rather than one per project that uses it. The formula is unchanged; only what "project file path" names is made exact.
+
+**2026-09-28 (Issue 5, #75):** `PKG002`, a deprecated package version, uses the same package formula. A deprecation has no advisory, so the link part is the version's nuget.org page, with the lower-case package ID and the normalised version, for example `https://www.nuget.org/packages/microsoft.data.sqlclient/5.1.0`, so writing the ID or version differently in a project does not change it. The rule ID keeps one version's `PKG001` and `PKG002` findings apart. The formula is unchanged.

@@ -1,0 +1,509 @@
+{
+  "@id": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.data.sqlclient/index.json",
+  "@type": [
+    "catalog:CatalogRoot",
+    "PackageRegistration",
+    "catalog:Permalink"
+  ],
+  "commitId": "beca1c2c-7824-4da8-80c5-dde7d08f8a4c",
+  "commitTimeStamp": "2026-09-18T01:54:14.0635869+00:00",
+  "count": 1,
+  "items": [
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.data.sqlclient/index.json#page/1.0.19123.2-preview/5.1.0",
+      "@type": "catalog:CatalogPage",
+      "commitId": "beca1c2c-7824-4da8-80c5-dde7d08f8a4c",
+      "commitTimeStamp": "2026-09-18T01:54:14.0635869+00:00",
+      "count": 1,
+      "items": [
+        {
+          "@id": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.data.sqlclient/5.1.0.json",
+          "@type": "Package",
+          "commitId": "298f5c61-5552-4ca8-a22c-b9b690cd9d14",
+          "commitTimeStamp": "2024-01-16T19:14:48.8963881+00:00",
+          "catalogEntry": {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json",
+            "@type": "PackageDetails",
+            "authors": "Microsoft",
+            "dependencyGroups": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2/microsoft.data.sqlclient.sni",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Data.SqlClient.SNI",
+                    "range": "[5.1.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.data.sqlclient.sni/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2/azure.identity",
+                    "@type": "PackageDependency",
+                    "id": "Azure.Identity",
+                    "range": "[1.7.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/azure.identity/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2/microsoft.identity.client",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Identity.Client",
+                    "range": "[4.47.2, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identity.client/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2/microsoft.identitymodel.jsonwebtokens",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.IdentityModel.JsonWebTokens",
+                    "range": "[6.24.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.jsonwebtokens/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2/microsoft.identitymodel.protocols.openidconnect",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.IdentityModel.Protocols.OpenIdConnect",
+                    "range": "[6.24.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.protocols.openidconnect/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2/system.buffers",
+                    "@type": "PackageDependency",
+                    "id": "System.Buffers",
+                    "range": "[4.5.1, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.buffers/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2/system.configuration.configurationmanager",
+                    "@type": "PackageDependency",
+                    "id": "System.Configuration.ConfigurationManager",
+                    "range": "[6.0.1, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.configuration.configurationmanager/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2/system.runtime.interopservices.runtimeinformation",
+                    "@type": "PackageDependency",
+                    "id": "System.Runtime.InteropServices.RuntimeInformation",
+                    "range": "[4.3.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.interopservices.runtimeinformation/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netframework4.6.2/system.text.encodings.web",
+                    "@type": "PackageDependency",
+                    "id": "System.Text.Encodings.Web",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.6.2"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/microsoft.data.sqlclient.sni.runtime",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Data.SqlClient.SNI.runtime",
+                    "range": "[5.1.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.data.sqlclient.sni.runtime/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/azure.identity",
+                    "@type": "PackageDependency",
+                    "id": "Azure.Identity",
+                    "range": "[1.7.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/azure.identity/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/microsoft.identity.client",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Identity.Client",
+                    "range": "[4.47.2, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identity.client/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/microsoft.identitymodel.protocols.openidconnect",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.IdentityModel.Protocols.OpenIdConnect",
+                    "range": "[6.24.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.protocols.openidconnect/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/microsoft.identitymodel.jsonwebtokens",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.IdentityModel.JsonWebTokens",
+                    "range": "[6.24.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.jsonwebtokens/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/microsoft.sqlserver.server",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.SqlServer.Server",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.sqlserver.server/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/system.configuration.configurationmanager",
+                    "@type": "PackageDependency",
+                    "id": "System.Configuration.ConfigurationManager",
+                    "range": "[6.0.1, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.configuration.configurationmanager/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/system.diagnostics.diagnosticsource",
+                    "@type": "PackageDependency",
+                    "id": "System.Diagnostics.DiagnosticSource",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.diagnostics.diagnosticsource/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/system.runtime.caching",
+                    "@type": "PackageDependency",
+                    "id": "System.Runtime.Caching",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.caching/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/system.text.encoding.codepages",
+                    "@type": "PackageDependency",
+                    "id": "System.Text.Encoding.CodePages",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encoding.codepages/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/system.text.encodings.web",
+                    "@type": "PackageDependency",
+                    "id": "System.Text.Encodings.Web",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/system.security.cryptography.cng",
+                    "@type": "PackageDependency",
+                    "id": "System.Security.Cryptography.Cng",
+                    "range": "[5.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.cryptography.cng/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/net6.0/system.security.principal.windows",
+                    "@type": "PackageDependency",
+                    "id": "System.Security.Principal.Windows",
+                    "range": "[5.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.principal.windows/index.json"
+                  }
+                ],
+                "targetFramework": "net6.0"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/microsoft.data.sqlclient.sni.runtime",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Data.SqlClient.SNI.runtime",
+                    "range": "[5.1.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.data.sqlclient.sni.runtime/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/azure.identity",
+                    "@type": "PackageDependency",
+                    "id": "Azure.Identity",
+                    "range": "[1.7.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/azure.identity/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/microsoft.identity.client",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Identity.Client",
+                    "range": "[4.47.2, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identity.client/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/microsoft.identitymodel.protocols.openidconnect",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.IdentityModel.Protocols.OpenIdConnect",
+                    "range": "[6.24.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.protocols.openidconnect/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/microsoft.identitymodel.jsonwebtokens",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.IdentityModel.JsonWebTokens",
+                    "range": "[6.24.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.jsonwebtokens/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/microsoft.sqlserver.server",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.SqlServer.Server",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.sqlserver.server/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/microsoft.win32.registry",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Win32.Registry",
+                    "range": "[5.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.win32.registry/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/system.buffers",
+                    "@type": "PackageDependency",
+                    "id": "System.Buffers",
+                    "range": "[4.5.1, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.buffers/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/system.configuration.configurationmanager",
+                    "@type": "PackageDependency",
+                    "id": "System.Configuration.ConfigurationManager",
+                    "range": "[6.0.1, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.configuration.configurationmanager/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/system.runtime.caching",
+                    "@type": "PackageDependency",
+                    "id": "System.Runtime.Caching",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.caching/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/system.text.encoding.codepages",
+                    "@type": "PackageDependency",
+                    "id": "System.Text.Encoding.CodePages",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encoding.codepages/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/system.text.encodings.web",
+                    "@type": "PackageDependency",
+                    "id": "System.Text.Encodings.Web",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/system.runtime.loader",
+                    "@type": "PackageDependency",
+                    "id": "System.Runtime.Loader",
+                    "range": "[4.3.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.loader/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/system.security.cryptography.cng",
+                    "@type": "PackageDependency",
+                    "id": "System.Security.Cryptography.Cng",
+                    "range": "[5.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.cryptography.cng/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.0/system.security.principal.windows",
+                    "@type": "PackageDependency",
+                    "id": "System.Security.Principal.Windows",
+                    "range": "[5.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.principal.windows/index.json"
+                  }
+                ],
+                "targetFramework": ".NETStandard2.0"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/microsoft.data.sqlclient.sni.runtime",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Data.SqlClient.SNI.runtime",
+                    "range": "[5.1.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.data.sqlclient.sni.runtime/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/azure.identity",
+                    "@type": "PackageDependency",
+                    "id": "Azure.Identity",
+                    "range": "[1.7.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/azure.identity/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/microsoft.identity.client",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Identity.Client",
+                    "range": "[4.47.2, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identity.client/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/microsoft.identitymodel.protocols.openidconnect",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.IdentityModel.Protocols.OpenIdConnect",
+                    "range": "[6.24.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.protocols.openidconnect/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/microsoft.identitymodel.jsonwebtokens",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.IdentityModel.JsonWebTokens",
+                    "range": "[6.24.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.jsonwebtokens/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/microsoft.sqlserver.server",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.SqlServer.Server",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.sqlserver.server/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/microsoft.win32.registry",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.Win32.Registry",
+                    "range": "[5.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.win32.registry/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/system.configuration.configurationmanager",
+                    "@type": "PackageDependency",
+                    "id": "System.Configuration.ConfigurationManager",
+                    "range": "[6.0.1, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.configuration.configurationmanager/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/system.runtime.caching",
+                    "@type": "PackageDependency",
+                    "id": "System.Runtime.Caching",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.caching/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/system.text.encoding.codepages",
+                    "@type": "PackageDependency",
+                    "id": "System.Text.Encoding.CodePages",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encoding.codepages/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/system.text.encodings.web",
+                    "@type": "PackageDependency",
+                    "id": "System.Text.Encodings.Web",
+                    "range": "[6.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/system.runtime.loader",
+                    "@type": "PackageDependency",
+                    "id": "System.Runtime.Loader",
+                    "range": "[4.3.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.loader/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/system.security.cryptography.cng",
+                    "@type": "PackageDependency",
+                    "id": "System.Security.Cryptography.Cng",
+                    "range": "[5.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.cryptography.cng/index.json"
+                  },
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#dependencygroup/.netstandard2.1/system.security.principal.windows",
+                    "@type": "PackageDependency",
+                    "id": "System.Security.Principal.Windows",
+                    "range": "[5.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.principal.windows/index.json"
+                  }
+                ],
+                "targetFramework": ".NETStandard2.1"
+              }
+            ],
+            "deprecation": {
+              "@id": "https://api.nuget.org/v3/catalog0/data/2024.01.16.19.14.01/microsoft.data.sqlclient.5.1.0.json#deprecation",
+              "@type": "deprecation",
+              "message": "An important security issue exists in this version of the package. It is recommended to update to a newer version.\nhttps://msrc.microsoft.com/update-guide/vulnerability/CVE-2024-0056",
+              "reasons": [
+                "CriticalBugs"
+              ]
+            },
+            "description": "Provides the data provider for SQL Server. These classes provide access to versions of SQL Server and encapsulate database-specific protocols, including tabular data stream (TDS)\n    \nCommonly Used Types:\nMicrosoft.Data.SqlClient.SqlConnection\nMicrosoft.Data.SqlClient.SqlException\nMicrosoft.Data.SqlClient.SqlParameter\nMicrosoft.Data.SqlClient.SqlDataReader\nMicrosoft.Data.SqlClient.SqlCommand\nMicrosoft.Data.SqlClient.SqlTransaction\nMicrosoft.Data.SqlClient.SqlParameterCollection\nMicrosoft.Data.SqlClient.SqlClientFactory\n\nWhen using NuGet 3.x this package requires at least version 3.4.",
+            "iconUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlclient/5.1.0/icon",
+            "id": "Microsoft.Data.SqlClient",
+            "language": "",
+            "licenseExpression": "MIT",
+            "licenseUrl": "https://www.nuget.org/packages/Microsoft.Data.SqlClient/5.1.0/license",
+            "listed": true,
+            "minClientVersion": "2.12",
+            "packageContent": "https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlclient/5.1.0/microsoft.data.sqlclient.5.1.0.nupkg",
+            "projectUrl": "https://aka.ms/sqlclientproject",
+            "published": "2023-01-19T21:11:55.423+00:00",
+            "requireLicenseAcceptance": true,
+            "summary": "",
+            "tags": [
+              "sqlclient",
+              "microsoft.data.sqlclient"
+            ],
+            "title": "Microsoft.Data.SqlClient",
+            "version": "5.1.0",
+            "vulnerabilities": [
+              {
+                "advisoryUrl": "https://github.com/advisories/GHSA-98g6-xh36-x2p7",
+                "severity": "2"
+              }
+            ]
+          },
+          "packageContent": "https://api.nuget.org/v3-flatcontainer/microsoft.data.sqlclient/5.1.0/microsoft.data.sqlclient.5.1.0.nupkg",
+          "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.data.sqlclient/index.json"
+        }
+      ],
+      "parent": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.data.sqlclient/index.json",
+      "lower": "1.0.19123.2-Preview",
+      "upper": "5.1.0"
+    }
+  ],
+  "@context": {
+    "@vocab": "http://schema.nuget.org/schema#",
+    "catalog": "http://schema.nuget.org/catalog#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "items": {
+      "@id": "catalog:item",
+      "@container": "@set"
+    },
+    "commitTimeStamp": {
+      "@id": "catalog:commitTimeStamp",
+      "@type": "xsd:dateTime"
+    },
+    "commitId": {
+      "@id": "catalog:commitId"
+    },
+    "count": {
+      "@id": "catalog:count"
+    },
+    "parent": {
+      "@id": "catalog:parent",
+      "@type": "@id"
+    },
+    "tags": {
+      "@id": "tag",
+      "@container": "@set"
+    },
+    "reasons": {
+      "@container": "@set"
+    },
+    "packageTargetFrameworks": {
+      "@id": "packageTargetFramework",
+      "@container": "@set"
+    },
+    "dependencyGroups": {
+      "@id": "dependencyGroup",
+      "@container": "@set"
+    },
+    "dependencies": {
+      "@id": "dependency",
+      "@container": "@set"
+    },
+    "packageContent": {
+      "@type": "@id"
+    },
+    "published": {
+      "@type": "xsd:dateTime"
+    },
+    "registration": {
+      "@type": "@id"
+    }
+  }
+}

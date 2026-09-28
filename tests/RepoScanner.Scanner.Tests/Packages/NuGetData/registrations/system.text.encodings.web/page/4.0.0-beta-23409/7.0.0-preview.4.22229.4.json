@@ -1,0 +1,146 @@
+{
+  "@id": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/page/4.0.0-beta-23409/7.0.0-preview.4.22229.4.json",
+  "@type": "catalog:CatalogPage",
+  "commitId": "51b61be7-b60c-4209-bd2a-6cea7a2aff6b",
+  "commitTimeStamp": "2026-05-12T17:57:55.5886097+00:00",
+  "count": 1,
+  "items": [
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/4.5.0.json",
+      "@type": "Package",
+      "commitId": "73e408ca-afbd-485f-97ed-c02d0ec749c0",
+      "commitTimeStamp": "2021-04-21T19:38:40.26811+00:00",
+      "catalogEntry": {
+        "@id": "https://api.nuget.org/v3/catalog0/data/2021.04.21.19.38.11/system.text.encodings.web.4.5.0.json",
+        "@type": "PackageDetails",
+        "authors": "Microsoft",
+        "dependencyGroups": [
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2021.04.21.19.38.11/system.text.encodings.web.4.5.0.json#dependencygroup/.netframework4.5",
+            "@type": "PackageDependencyGroup",
+            "targetFramework": ".NETFramework4.5"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2021.04.21.19.38.11/system.text.encodings.web.4.5.0.json#dependencygroup/.netstandard1.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2021.04.21.19.38.11/system.text.encodings.web.4.5.0.json#dependencygroup/.netstandard1.0/netstandard.library",
+                "@type": "PackageDependency",
+                "id": "NETStandard.Library",
+                "range": "[1.6.1, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/netstandard.library/index.json"
+              }
+            ],
+            "targetFramework": ".NETStandard1.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2021.04.21.19.38.11/system.text.encodings.web.4.5.0.json#dependencygroup/.netstandard2.0",
+            "@type": "PackageDependencyGroup",
+            "targetFramework": ".NETStandard2.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2021.04.21.19.38.11/system.text.encodings.web.4.5.0.json#dependencygroup/.netportable4.5-profile259",
+            "@type": "PackageDependencyGroup",
+            "targetFramework": ".NETPortable4.5-Profile259"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2021.04.21.19.38.11/system.text.encodings.web.4.5.0.json#dependencygroup/windows8.0",
+            "@type": "PackageDependencyGroup",
+            "targetFramework": "Windows8.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2021.04.21.19.38.11/system.text.encodings.web.4.5.0.json#dependencygroup/windowsphone8.0",
+            "@type": "PackageDependencyGroup",
+            "targetFramework": "WindowsPhone8.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2021.04.21.19.38.11/system.text.encodings.web.4.5.0.json#dependencygroup/windowsphoneapp8.1",
+            "@type": "PackageDependencyGroup",
+            "targetFramework": "WindowsPhoneApp8.1"
+          }
+        ],
+        "description": "Provides types for encoding and escaping strings for use in JavaScript, HyperText Markup Language (HTML), and uniform resource locators (URL).\n\nCommonly Used Types:\nSystem.Text.Encodings.Web.HtmlEncoder\nSystem.Text.Encodings.Web.UrlEncoder\nSystem.Text.Encodings.Web.JavaScriptEncoder\n \n30ab651fcb4354552bd4891619a0bdd81e0ebdbf \nWhen using NuGet 3.x this package requires at least version 3.4.",
+        "iconUrl": "https://api.nuget.org/v3-flatcontainer/system.text.encodings.web/4.5.0/icon",
+        "id": "System.Text.Encodings.Web",
+        "language": "",
+        "licenseExpression": "",
+        "licenseUrl": "https://github.com/dotnet/corefx/blob/master/LICENSE.TXT",
+        "listed": true,
+        "minClientVersion": "2.12",
+        "packageContent": "https://api.nuget.org/v3-flatcontainer/system.text.encodings.web/4.5.0/system.text.encodings.web.4.5.0.nupkg",
+        "projectUrl": "https://dot.net/",
+        "published": "2018-05-29T20:14:32.76+00:00",
+        "requireLicenseAcceptance": false,
+        "summary": "",
+        "tags": [
+          ""
+        ],
+        "title": "System.Text.Encodings.Web",
+        "version": "4.5.0",
+        "vulnerabilities": [
+          {
+            "advisoryUrl": "https://github.com/advisories/GHSA-ghhp-997w-qr28",
+            "severity": "3"
+          }
+        ]
+      },
+      "packageContent": "https://api.nuget.org/v3-flatcontainer/system.text.encodings.web/4.5.0/system.text.encodings.web.4.5.0.nupkg",
+      "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+    }
+  ],
+  "parent": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json",
+  "lower": "4.0.0-beta-23409",
+  "upper": "7.0.0-preview.4.22229.4",
+  "@context": {
+    "@vocab": "http://schema.nuget.org/schema#",
+    "catalog": "http://schema.nuget.org/catalog#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "items": {
+      "@id": "catalog:item",
+      "@container": "@set"
+    },
+    "commitTimeStamp": {
+      "@id": "catalog:commitTimeStamp",
+      "@type": "xsd:dateTime"
+    },
+    "commitId": {
+      "@id": "catalog:commitId"
+    },
+    "count": {
+      "@id": "catalog:count"
+    },
+    "parent": {
+      "@id": "catalog:parent",
+      "@type": "@id"
+    },
+    "tags": {
+      "@id": "tag",
+      "@container": "@set"
+    },
+    "reasons": {
+      "@container": "@set"
+    },
+    "packageTargetFrameworks": {
+      "@id": "packageTargetFramework",
+      "@container": "@set"
+    },
+    "dependencyGroups": {
+      "@id": "dependencyGroup",
+      "@container": "@set"
+    },
+    "dependencies": {
+      "@id": "dependency",
+      "@container": "@set"
+    },
+    "packageContent": {
+      "@type": "@id"
+    },
+    "published": {
+      "@type": "xsd:dateTime"
+    },
+    "registration": {
+      "@type": "@id"
+    }
+  }
+}
