@@ -282,7 +282,8 @@ namespace RepoScanner.Scanner.Tests.Local
                     Assert.That(exitCode, Is.EqualTo(0));
                     Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Completed));
                     Assert.That(run.ScannerResults.Select(result => result.Status), Is.All.EqualTo(ScannerStatus.Succeeded));
-                    Assert.That(context.Findings.Count(finding => finding.RuleId == "PKG001"), Is.EqualTo(FixturePackages.All.Count));
+                    Assert.That(context.Findings.Count(finding => finding.RuleId == "PKG001"), Is.EqualTo(FixturePackages.All.Count(package => package.RuleId == "PKG001")));
+                    Assert.That(context.Findings.Count(finding => finding.RuleId == "PKG002"), Is.EqualTo(FixturePackages.All.Count(package => package.RuleId == "PKG002")));
                     Assert.That(context.Findings.Where(finding => finding.ScannerType == ScannerType.Secret).Select(finding => finding.RuleId),
                         Is.EquivalentTo(new[] { "SEC004", "SEC006" }));
                 }

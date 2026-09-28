@@ -1,0 +1,446 @@
+{
+  "@id": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identity.client/page/4.55.0/4.77.0.json",
+  "@type": "catalog:CatalogPage",
+  "commitId": "a5e31422-60a8-4058-8e62-92d5e82b2a86",
+  "commitTimeStamp": "2025-10-14T23:22:26.104789+00:00",
+  "count": 1,
+  "items": [
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identity.client/4.59.0.json",
+      "@type": "Package",
+      "commitId": "aecdc91a-56c6-487c-870b-fd21c6f97f68",
+      "commitTimeStamp": "2025-05-16T16:22:02.0274257+00:00",
+      "catalogEntry": {
+        "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json",
+        "@type": "PackageDetails",
+        "authors": "Microsoft",
+        "dependencyGroups": [
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/.netframework4.6.2",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/.netframework4.6.2/microsoft.identitymodel.abstractions",
+                "@type": "PackageDependency",
+                "id": "Microsoft.IdentityModel.Abstractions",
+                "range": "[6.22.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.abstractions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/.netframework4.6.2/system.diagnostics.diagnosticsource",
+                "@type": "PackageDependency",
+                "id": "System.Diagnostics.DiagnosticSource",
+                "range": "[6.0.1, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.diagnostics.diagnosticsource/index.json"
+              }
+            ],
+            "targetFramework": ".NETFramework4.6.2"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/monoandroid12.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/monoandroid12.0/microsoft.identitymodel.abstractions",
+                "@type": "PackageDependency",
+                "id": "Microsoft.IdentityModel.Abstractions",
+                "range": "[6.22.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.abstractions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/monoandroid12.0/system.security.securestring",
+                "@type": "PackageDependency",
+                "id": "System.Security.SecureString",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.securestring/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/monoandroid12.0/xamarin.androidx.browser",
+                "@type": "PackageDependency",
+                "id": "Xamarin.AndroidX.Browser",
+                "range": "[1.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/xamarin.androidx.browser/index.json"
+              }
+            ],
+            "targetFramework": "MonoAndroid12.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/xamarin.ios1.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/xamarin.ios1.0/microsoft.csharp",
+                "@type": "PackageDependency",
+                "id": "Microsoft.CSharp",
+                "range": "[4.5.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.csharp/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/xamarin.ios1.0/microsoft.identitymodel.abstractions",
+                "@type": "PackageDependency",
+                "id": "Microsoft.IdentityModel.Abstractions",
+                "range": "[6.22.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.abstractions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/xamarin.ios1.0/system.componentmodel.typeconverter",
+                "@type": "PackageDependency",
+                "id": "System.ComponentModel.TypeConverter",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.componentmodel.typeconverter/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/xamarin.ios1.0/system.runtime.serialization.formatters",
+                "@type": "PackageDependency",
+                "id": "System.Runtime.Serialization.Formatters",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.serialization.formatters/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/xamarin.ios1.0/system.runtime.serialization.primitives",
+                "@type": "PackageDependency",
+                "id": "System.Runtime.Serialization.Primitives",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.serialization.primitives/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/xamarin.ios1.0/system.security.securestring",
+                "@type": "PackageDependency",
+                "id": "System.Security.SecureString",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.securestring/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/xamarin.ios1.0/system.xml.xmldocument",
+                "@type": "PackageDependency",
+                "id": "System.Xml.XmlDocument",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.xml.xmldocument/index.json"
+              }
+            ],
+            "targetFramework": "Xamarin.iOS1.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0/microsoft.identitymodel.abstractions",
+                "@type": "PackageDependency",
+                "id": "Microsoft.IdentityModel.Abstractions",
+                "range": "[6.22.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.abstractions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0/system.diagnostics.diagnosticsource",
+                "@type": "PackageDependency",
+                "id": "System.Diagnostics.DiagnosticSource",
+                "range": "[6.0.1, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.diagnostics.diagnosticsource/index.json"
+              }
+            ],
+            "targetFramework": "net6.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-android31.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-android31.0/microsoft.identitymodel.abstractions",
+                "@type": "PackageDependency",
+                "id": "Microsoft.IdentityModel.Abstractions",
+                "range": "[6.22.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.abstractions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-android31.0/system.security.securestring",
+                "@type": "PackageDependency",
+                "id": "System.Security.SecureString",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.securestring/index.json"
+              }
+            ],
+            "targetFramework": "net6.0-android31.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-ios15.4",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-ios15.4/microsoft.identitymodel.abstractions",
+                "@type": "PackageDependency",
+                "id": "Microsoft.IdentityModel.Abstractions",
+                "range": "[6.22.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.abstractions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-ios15.4/system.runtime.interopservices.nfloat.internal",
+                "@type": "PackageDependency",
+                "id": "System.Runtime.InteropServices.NFloat.Internal",
+                "range": "[6.0.1, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.interopservices.nfloat.internal/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-ios15.4/system.security.securestring",
+                "@type": "PackageDependency",
+                "id": "System.Security.SecureString",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.securestring/index.json"
+              }
+            ],
+            "targetFramework": "net6.0-ios15.4"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-windows7.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-windows7.0/microsoft.identity.client.nativeinterop",
+                "@type": "PackageDependency",
+                "id": "Microsoft.Identity.Client.NativeInterop",
+                "range": "[0.13.14, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identity.client.nativeinterop/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-windows7.0/microsoft.identitymodel.abstractions",
+                "@type": "PackageDependency",
+                "id": "Microsoft.IdentityModel.Abstractions",
+                "range": "[6.22.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.abstractions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-windows7.0/microsoft.web.webview2",
+                "@type": "PackageDependency",
+                "id": "Microsoft.Web.WebView2",
+                "range": "[1.0.864.35, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.web.webview2/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/net6.0-windows7.0/system.diagnostics.diagnosticsource",
+                "@type": "PackageDependency",
+                "id": "System.Diagnostics.DiagnosticSource",
+                "range": "[6.0.1, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.diagnostics.diagnosticsource/index.json"
+              }
+            ],
+            "targetFramework": "net6.0-windows7.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/.netstandard2.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/.netstandard2.0/microsoft.identitymodel.abstractions",
+                "@type": "PackageDependency",
+                "id": "Microsoft.IdentityModel.Abstractions",
+                "range": "[6.22.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.abstractions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/.netstandard2.0/system.diagnostics.diagnosticsource",
+                "@type": "PackageDependency",
+                "id": "System.Diagnostics.DiagnosticSource",
+                "range": "[6.0.1, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.diagnostics.diagnosticsource/index.json"
+              }
+            ],
+            "targetFramework": ".NETStandard2.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/microsoft.csharp",
+                "@type": "PackageDependency",
+                "id": "Microsoft.CSharp",
+                "range": "[4.5.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.csharp/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/microsoft.identitymodel.abstractions",
+                "@type": "PackageDependency",
+                "id": "Microsoft.IdentityModel.Abstractions",
+                "range": "[6.22.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identitymodel.abstractions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/system.net.nameresolution",
+                "@type": "PackageDependency",
+                "id": "System.Net.NameResolution",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.net.nameresolution/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/system.runtime.serialization.formatters",
+                "@type": "PackageDependency",
+                "id": "System.Runtime.Serialization.Formatters",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.serialization.formatters/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/system.runtime.serialization.json",
+                "@type": "PackageDependency",
+                "id": "System.Runtime.Serialization.Json",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.serialization.json/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/system.runtime.serialization.primitives",
+                "@type": "PackageDependency",
+                "id": "System.Runtime.Serialization.Primitives",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.serialization.primitives/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/system.security.securestring",
+                "@type": "PackageDependency",
+                "id": "System.Security.SecureString",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.security.securestring/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/system.servicemodel.http",
+                "@type": "PackageDependency",
+                "id": "System.ServiceModel.Http",
+                "range": "[4.5.3, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.servicemodel.http/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/system.servicemodel.nettcp",
+                "@type": "PackageDependency",
+                "id": "System.ServiceModel.NetTcp",
+                "range": "[4.5.3, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.servicemodel.nettcp/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/system.servicemodel.security",
+                "@type": "PackageDependency",
+                "id": "System.ServiceModel.Security",
+                "range": "[4.5.3, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.servicemodel.security/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#dependencygroup/uap10.0.17763/system.xml.xdocument",
+                "@type": "PackageDependency",
+                "id": "System.Xml.XDocument",
+                "range": "[4.3.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.xml.xdocument/index.json"
+              }
+            ],
+            "targetFramework": "UAP10.0.17763"
+          }
+        ],
+        "deprecation": {
+          "@id": "https://api.nuget.org/v3/catalog0/data/2025.05.16.16.20.54/microsoft.identity.client.4.59.0.json#deprecation",
+          "@type": "deprecation",
+          "message": "Move to latest Microsoft.Identity.Client. See https://aka.ms/msal/LTS for details.",
+          "reasons": [
+            "Legacy"
+          ]
+        },
+        "description": "This package contains the binaries of the Microsoft Authentication Library for .NET (MSAL.NET).\n      MSAL.NET makes it easy to obtain tokens from the Microsoft identity platform for developers (formally Azure AD v2.0) signing-in users with work & school accounts, Microsoft personal accounts, and social identities via Azure AD B2C. These tokens provide access to Microsoft Cloud API and any other API secured by the Microsoft identity platform. This version supports adding authentication functionality to your .NET based clients - .NET, .NET Framework, .NET MAUI, Xamarin iOS, Xamarin Android and UWP",
+        "iconUrl": "",
+        "id": "Microsoft.Identity.Client",
+        "language": "",
+        "licenseExpression": "MIT",
+        "licenseUrl": "https://www.nuget.org/packages/Microsoft.Identity.Client/4.59.0/license",
+        "listed": true,
+        "minClientVersion": "",
+        "packageContent": "https://api.nuget.org/v3-flatcontainer/microsoft.identity.client/4.59.0/microsoft.identity.client.4.59.0.nupkg",
+        "projectUrl": "https://go.microsoft.com/fwlink/?linkid=844761",
+        "published": "2024-01-17T03:42:46.503+00:00",
+        "requireLicenseAcceptance": true,
+        "summary": "",
+        "tags": [
+          "Microsoft",
+          "Authentication",
+          "Library",
+          "MSA",
+          "MSAL",
+          "B2C",
+          "Azure",
+          "Active",
+          "Directory",
+          "AAD",
+          "Identity",
+          ".NET",
+          "Windows",
+          "Store",
+          "Xamarin",
+          "iOS",
+          "Android",
+          "MAUI"
+        ],
+        "title": "Microsoft Authentication Library for .NET",
+        "version": "4.59.0",
+        "vulnerabilities": [
+          {
+            "advisoryUrl": "https://github.com/advisories/GHSA-x674-v45j-fwxw",
+            "severity": "0"
+          },
+          {
+            "advisoryUrl": "https://github.com/advisories/GHSA-m5vv-6r4h-3vj9",
+            "severity": "1"
+          }
+        ]
+      },
+      "packageContent": "https://api.nuget.org/v3-flatcontainer/microsoft.identity.client/4.59.0/microsoft.identity.client.4.59.0.nupkg",
+      "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identity.client/index.json"
+    }
+  ],
+  "parent": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.identity.client/index.json",
+  "lower": "4.55.0",
+  "upper": "4.77.0",
+  "@context": {
+    "@vocab": "http://schema.nuget.org/schema#",
+    "catalog": "http://schema.nuget.org/catalog#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "items": {
+      "@id": "catalog:item",
+      "@container": "@set"
+    },
+    "commitTimeStamp": {
+      "@id": "catalog:commitTimeStamp",
+      "@type": "xsd:dateTime"
+    },
+    "commitId": {
+      "@id": "catalog:commitId"
+    },
+    "count": {
+      "@id": "catalog:count"
+    },
+    "parent": {
+      "@id": "catalog:parent",
+      "@type": "@id"
+    },
+    "tags": {
+      "@id": "tag",
+      "@container": "@set"
+    },
+    "reasons": {
+      "@container": "@set"
+    },
+    "packageTargetFrameworks": {
+      "@id": "packageTargetFramework",
+      "@container": "@set"
+    },
+    "dependencyGroups": {
+      "@id": "dependencyGroup",
+      "@container": "@set"
+    },
+    "dependencies": {
+      "@id": "dependency",
+      "@container": "@set"
+    },
+    "packageContent": {
+      "@type": "@id"
+    },
+    "published": {
+      "@type": "xsd:dateTime"
+    },
+    "registration": {
+      "@type": "@id"
+    }
+  }
+}

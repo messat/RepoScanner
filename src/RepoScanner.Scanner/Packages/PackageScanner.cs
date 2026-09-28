@@ -10,12 +10,15 @@ using RepoScanner.Core.Scanning;
 
 namespace RepoScanner.Scanner.Packages
 {
-    // Finds NuGet packages with known vulnerabilities (PKG001) in the project files under a folder (Issue 5
-    // design, Package scanner): what the project files declare (#43), checked against nuget.org's data (#44)
-    // at the version each really is (#45). Only packages listed directly are checked (ADR-026).
+    // Finds NuGet packages with known vulnerabilities (PKG001) and deprecated versions (PKG002, #75) in the project
+    // files under a folder (Issue 5 design, Package scanner and Deprecated packages): what the project files declare
+    // (#43), checked against nuget.org's data (#44) at the version each really is (#45). Only packages listed
+    // directly are checked (ADR-026).
     public sealed class PackageScanner : IScanner
     {
-        public const string RuleId = "PKG001";
+        public const string VulnerableRuleId = "PKG001";
+
+        public const string DeprecatedRuleId = "PKG002";
 
         private readonly ProjectFileReader _reader;
         private readonly NuGetVulnerabilityIndexClient _client;
@@ -44,14 +47,7 @@ namespace RepoScanner.Scanner.Packages
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Advisories first: a package with none, such as one from a private feed, needs no version, so it
-                // costs no version-list request
-                IReadOnlyList<PackageAdvisory> advisories = await _client.GetAdvisoriesAsync(package.PackageId, cancellationToken);
-                if (advisories.Count == 0)
-                {
-                    continue;
-                }
-
+                // Resolved first: both rules need the version a build gets (decision 29)
                 IReadOnlyList<NuGetVersion>? availableVersions = null;
                 if (!VersionResolver.IsPlainVersion(package.VersionText))
                 {
@@ -70,15 +66,23 @@ namespace RepoScanner.Scanner.Packages
                     continue;
                 }
 
-                // nuget.org lists an advisory once per affected range, all with the same link: one finding per
-                // link, as serious as the worst of its entries that the version is in (decision 14)
+                // PKG001. nuget.org lists an advisory once per affected range, all with the same link: one finding
+                // per link, as serious as the worst of its entries that the version is in (decision 14)
+                IReadOnlyList<PackageAdvisory> advisories = await _client.GetAdvisoriesAsync(package.PackageId, cancellationToken);
                 foreach (IGrouping<string, PackageAdvisory> advisory in advisories.GroupBy(entry => entry.AdvisoryUrl, StringComparer.Ordinal))
                 {
                     List<PackageAdvisory> matching = advisory.Where(entry => entry.AffectedVersions.Satisfies(version)).ToList();
                     if (matching.Count > 0)
                     {
-                        findings.Add(ToFinding(package, version, advisory.Key, HighestSeverity(package, matching)));
+                        findings.Add(ToFinding(package, version, VulnerableRuleId, advisory.Key, HighestSeverity(package, matching), "has a known vulnerability"));
                     }
+                }
+
+                // PKG002 (#75): at most one per package, linked to the version's nuget.org page (decision 27)
+                PackageDeprecation? deprecation = await _client.GetDeprecationAsync(package.PackageId, version, cancellationToken);
+                if (deprecation != null)
+                {
+                    findings.Add(ToFinding(package, version, DeprecatedRuleId, deprecation.DetailsUrl, DeprecatedSeverity(package, deprecation), Deprecated(deprecation)));
                 }
             }
 
@@ -86,6 +90,7 @@ namespace RepoScanner.Scanner.Packages
                 .OrderBy(finding => finding.FilePath, StringComparer.Ordinal)
                 .ThenBy(finding => finding.LineNumber)
                 .ThenBy(finding => finding.PackageName, StringComparer.Ordinal)
+                .ThenBy(finding => finding.RuleId, StringComparer.Ordinal)
                 .ThenBy(finding => finding.AdvisoryUrl, StringComparer.Ordinal)
                 .ToList();
 
@@ -111,7 +116,37 @@ namespace RepoScanner.Scanner.Packages
             return matching.Max(entry => AdvisorySeverity.ToSeverity(entry.Severity));
         }
 
-        private static RawFinding ToFinding(DeclaredPackage package, NuGetVersion version, string advisoryUrl, Severity severity)
+        private Severity DeprecatedSeverity(DeclaredPackage package, PackageDeprecation deprecation)
+        {
+            foreach (string reason in deprecation.Reasons.Where(reason => !DeprecationSeverity.IsKnown(reason)))
+            {
+                _logger.LogWarning("{PackageId} is deprecated for {Reason}, a reason nuget.org does not document; reported as Low",
+                    package.PackageId, reason);
+            }
+
+            return DeprecationSeverity.ToSeverity(deprecation.Reasons);
+        }
+
+        // "is deprecated (legacy); use Azure.Storage.Blobs instead", or without the alternative when nuget.org names
+        // none (decision 28). The author's own note is left on the nuget.org page.
+        private static string Deprecated(PackageDeprecation deprecation)
+        {
+            string reasons = deprecation.Reasons.Count == 0
+                ? string.Empty
+                : " (" + string.Join(", ", deprecation.Reasons.Select(InWords)) + ")";
+            string alternative = deprecation.AlternatePackageId == null ? string.Empty : "; use " + deprecation.AlternatePackageId + " instead";
+
+            return "is deprecated" + reasons + alternative;
+        }
+
+        // CriticalBugs as "critical bugs"; Legacy, Other and any other reason in lower case
+        private static string InWords(string reason)
+        {
+            return string.Equals(reason, "CriticalBugs", StringComparison.OrdinalIgnoreCase) ? "critical bugs" : reason.ToLowerInvariant();
+        }
+
+        // problem is what is wrong with the version, such as "has a known vulnerability"
+        private static RawFinding ToFinding(DeclaredPackage package, NuGetVersion version, string ruleId, string link, Severity severity, string problem)
         {
             string resolvedVersion = version.ToNormalizedString();
 
@@ -121,14 +156,15 @@ namespace RepoScanner.Scanner.Packages
             return new RawFinding
             {
                 ScannerType = ScannerType.Package,
-                RuleId = RuleId,
+                RuleId = ruleId,
                 Severity = severity,
                 FilePath = package.FilePath,
                 LineNumber = package.LineNumber,
-                Message = package.PackageId + " " + resolvedVersion + from + " has a known vulnerability",
+                Message = package.PackageId + " " + resolvedVersion + from + " " + problem,
                 PackageName = package.PackageId,
                 PackageVersion = resolvedVersion,
-                AdvisoryUrl = advisoryUrl
+                // The advisory for PKG001, the version's nuget.org page for PKG002 (ADR-024)
+                AdvisoryUrl = link
             };
         }
     }

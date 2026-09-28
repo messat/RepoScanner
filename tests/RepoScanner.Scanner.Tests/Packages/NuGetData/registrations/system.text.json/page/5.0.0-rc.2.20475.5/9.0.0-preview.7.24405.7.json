@@ -1,0 +1,261 @@
+{
+  "@id": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.json/page/5.0.0-rc.2.20475.5/9.0.0-preview.7.24405.7.json",
+  "@type": "catalog:CatalogPage",
+  "commitId": "9f6a06e7-0181-4fc4-8108-fac714eef1a3",
+  "commitTimeStamp": "2026-04-21T23:20:33.7874768+00:00",
+  "count": 1,
+  "items": [
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.json/8.0.3.json",
+      "@type": "Package",
+      "commitId": "42bfb378-3a0f-49c0-958b-5f3c7b92632d",
+      "commitTimeStamp": "2024-10-09T01:09:11.6105103+00:00",
+      "catalogEntry": {
+        "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json",
+        "@type": "PackageDetails",
+        "authors": "Microsoft",
+        "dependencyGroups": [
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netframework4.6.2",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netframework4.6.2/microsoft.bcl.asyncinterfaces",
+                "@type": "PackageDependency",
+                "id": "Microsoft.Bcl.AsyncInterfaces",
+                "range": "[8.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.bcl.asyncinterfaces/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netframework4.6.2/system.text.encodings.web",
+                "@type": "PackageDependency",
+                "id": "System.Text.Encodings.Web",
+                "range": "[8.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netframework4.6.2/system.buffers",
+                "@type": "PackageDependency",
+                "id": "System.Buffers",
+                "range": "[4.5.1, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.buffers/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netframework4.6.2/system.memory",
+                "@type": "PackageDependency",
+                "id": "System.Memory",
+                "range": "[4.5.5, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.memory/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netframework4.6.2/system.runtime.compilerservices.unsafe",
+                "@type": "PackageDependency",
+                "id": "System.Runtime.CompilerServices.Unsafe",
+                "range": "[6.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.compilerservices.unsafe/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netframework4.6.2/system.threading.tasks.extensions",
+                "@type": "PackageDependency",
+                "id": "System.Threading.Tasks.Extensions",
+                "range": "[4.5.4, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.threading.tasks.extensions/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netframework4.6.2/system.valuetuple",
+                "@type": "PackageDependency",
+                "id": "System.ValueTuple",
+                "range": "[4.5.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.valuetuple/index.json"
+              }
+            ],
+            "targetFramework": ".NETFramework4.6.2"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/net6.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/net6.0/system.text.encodings.web",
+                "@type": "PackageDependency",
+                "id": "System.Text.Encodings.Web",
+                "range": "[8.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/net6.0/system.runtime.compilerservices.unsafe",
+                "@type": "PackageDependency",
+                "id": "System.Runtime.CompilerServices.Unsafe",
+                "range": "[6.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.compilerservices.unsafe/index.json"
+              }
+            ],
+            "targetFramework": "net6.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/net7.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/net7.0/system.text.encodings.web",
+                "@type": "PackageDependency",
+                "id": "System.Text.Encodings.Web",
+                "range": "[8.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+              }
+            ],
+            "targetFramework": "net7.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/net8.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/net8.0/system.text.encodings.web",
+                "@type": "PackageDependency",
+                "id": "System.Text.Encodings.Web",
+                "range": "[8.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+              }
+            ],
+            "targetFramework": "net8.0"
+          },
+          {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netstandard2.0",
+            "@type": "PackageDependencyGroup",
+            "dependencies": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netstandard2.0/microsoft.bcl.asyncinterfaces",
+                "@type": "PackageDependency",
+                "id": "Microsoft.Bcl.AsyncInterfaces",
+                "range": "[8.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.bcl.asyncinterfaces/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netstandard2.0/system.text.encodings.web",
+                "@type": "PackageDependency",
+                "id": "System.Text.Encodings.Web",
+                "range": "[8.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.encodings.web/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netstandard2.0/system.buffers",
+                "@type": "PackageDependency",
+                "id": "System.Buffers",
+                "range": "[4.5.1, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.buffers/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netstandard2.0/system.memory",
+                "@type": "PackageDependency",
+                "id": "System.Memory",
+                "range": "[4.5.5, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.memory/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netstandard2.0/system.runtime.compilerservices.unsafe",
+                "@type": "PackageDependency",
+                "id": "System.Runtime.CompilerServices.Unsafe",
+                "range": "[6.0.0, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.runtime.compilerservices.unsafe/index.json"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.10.09.01.08.27/system.text.json.8.0.3.json#dependencygroup/.netstandard2.0/system.threading.tasks.extensions",
+                "@type": "PackageDependency",
+                "id": "System.Threading.Tasks.Extensions",
+                "range": "[4.5.4, )",
+                "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.threading.tasks.extensions/index.json"
+              }
+            ],
+            "targetFramework": ".NETStandard2.0"
+          }
+        ],
+        "description": "Provides high-performance and low-allocating types that serialize objects to JavaScript Object Notation (JSON) text and deserialize JSON text to objects, with UTF-8 support built-in. Also provides types to read and write JSON text encoded as UTF-8, and to create an in-memory document object model (DOM), that is read-only, for random access of the JSON elements within a structured view of the data.\n\nThe System.Text.Json library is built-in as part of the shared framework in .NET Runtime. The package can be installed when you need to use it in other target frameworks.",
+        "iconUrl": "https://api.nuget.org/v3-flatcontainer/system.text.json/8.0.3/icon",
+        "id": "System.Text.Json",
+        "language": "",
+        "licenseExpression": "MIT",
+        "licenseUrl": "https://www.nuget.org/packages/System.Text.Json/8.0.3/license",
+        "readmeUrl": "https://www.nuget.org/packages/System.Text.Json/8.0.3#show-readme-container",
+        "listed": true,
+        "minClientVersion": "",
+        "packageContent": "https://api.nuget.org/v3-flatcontainer/system.text.json/8.0.3/system.text.json.8.0.3.nupkg",
+        "projectUrl": "https://dot.net/",
+        "published": "2024-03-12T13:38:13.22+00:00",
+        "requireLicenseAcceptance": false,
+        "summary": "",
+        "tags": [
+          ""
+        ],
+        "title": "",
+        "version": "8.0.3",
+        "vulnerabilities": [
+          {
+            "advisoryUrl": "https://github.com/advisories/GHSA-hh2w-p6rv-4g7w",
+            "severity": "2"
+          },
+          {
+            "advisoryUrl": "https://github.com/advisories/GHSA-8g4q-xg66-9fp4",
+            "severity": "2"
+          }
+        ]
+      },
+      "packageContent": "https://api.nuget.org/v3-flatcontainer/system.text.json/8.0.3/system.text.json.8.0.3.nupkg",
+      "registration": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.json/index.json"
+    }
+  ],
+  "parent": "https://api.nuget.org/v3/registration5-gz-semver2/system.text.json/index.json",
+  "lower": "5.0.0-rc.2.20475.5",
+  "upper": "9.0.0-preview.7.24405.7",
+  "@context": {
+    "@vocab": "http://schema.nuget.org/schema#",
+    "catalog": "http://schema.nuget.org/catalog#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "items": {
+      "@id": "catalog:item",
+      "@container": "@set"
+    },
+    "commitTimeStamp": {
+      "@id": "catalog:commitTimeStamp",
+      "@type": "xsd:dateTime"
+    },
+    "commitId": {
+      "@id": "catalog:commitId"
+    },
+    "count": {
+      "@id": "catalog:count"
+    },
+    "parent": {
+      "@id": "catalog:parent",
+      "@type": "@id"
+    },
+    "tags": {
+      "@id": "tag",
+      "@container": "@set"
+    },
+    "reasons": {
+      "@container": "@set"
+    },
+    "packageTargetFrameworks": {
+      "@id": "packageTargetFramework",
+      "@container": "@set"
+    },
+    "dependencyGroups": {
+      "@id": "dependencyGroup",
+      "@container": "@set"
+    },
+    "dependencies": {
+      "@id": "dependency",
+      "@container": "@set"
+    },
+    "packageContent": {
+      "@type": "@id"
+    },
+    "published": {
+      "@type": "xsd:dateTime"
+    },
+    "registration": {
+      "@type": "@id"
+    }
+  }
+}

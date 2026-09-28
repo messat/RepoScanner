@@ -24,6 +24,7 @@ namespace RepoScanner.Scanner.Tests.Packages
         public const string ServiceIndexUrl = "https://api.nuget.org/v3/index.json";
         public const string VulnerabilityIndexUrl = "https://api.nuget.org/v3/vulnerabilities/index.json";
         public const string PackageBaseAddress = "https://api.nuget.org/v3-flatcontainer/";
+        public const string RegistrationsBaseUrl = "https://api.nuget.org/v3/registration5-gz-semver2/";
 
         private static readonly string DataFolder = Path.Combine(RepositoryRoot.FullPath, "tests", "RepoScanner.Scanner.Tests", "Packages", "NuGetData");
 
@@ -88,6 +89,11 @@ namespace RepoScanner.Scanner.Tests.Packages
         public static string VersionListUrl(string packageId)
         {
             return PackageBaseAddress + packageId.ToLowerInvariant() + "/index.json";
+        }
+
+        public static string RegistrationIndexUrl(string packageId)
+        {
+            return RegistrationsBaseUrl + packageId.ToLowerInvariant() + "/index.json";
         }
 
         public int RequestCount(string url)
@@ -190,6 +196,16 @@ namespace RepoScanner.Scanner.Tests.Packages
                 return Json(url, File.ReadAllText(Path.Combine(DataFolder, file)));
             }
 
+            if (url.StartsWith(RegistrationsBaseUrl, StringComparison.Ordinal))
+            {
+                // Package metadata (#75): an index or a page, at the same path under registrations/. nuget.org
+                // answers 404 for a package it does not know.
+                string relativePath = url.Substring(RegistrationsBaseUrl.Length).Replace('/', Path.DirectorySeparatorChar);
+                string metadataFile = Path.Combine(DataFolder, "registrations", relativePath);
+
+                return File.Exists(metadataFile) ? Json(url, File.ReadAllText(metadataFile)) : new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+
             if (url.StartsWith(PackageBaseAddress, StringComparison.Ordinal) && url.EndsWith("/index.json", StringComparison.Ordinal))
             {
                 // nuget.org answers 404 for a package it does not know
@@ -207,11 +223,11 @@ namespace RepoScanner.Scanner.Tests.Packages
             throw new InvalidOperationException("FakeNuGet does not know " + url + ": a test must not reach the internet");
         }
 
-        // As nuget.org sends it: the vulnerability index and its pages gzip-compressed with Content-Encoding: gzip,
-        // whatever the client asks for (checked on 2026-09-28), and everything else as plain JSON
+        // As nuget.org sends it: the vulnerability index and its pages, and the package metadata, gzip-compressed
+        // with Content-Encoding: gzip whatever the client asks for (checked on 2026-09-28); the rest as plain JSON
         private HttpResponseMessage Json(string url, string body)
         {
-            if (!_gzipUrls.Contains(url))
+            if (!_gzipUrls.Contains(url) && !url.StartsWith(RegistrationsBaseUrl, StringComparison.Ordinal))
             {
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
             }

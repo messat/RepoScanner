@@ -1,0 +1,277 @@
+{
+  "@id": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies/index.json",
+  "@type": [
+    "catalog:CatalogRoot",
+    "PackageRegistration",
+    "catalog:Permalink"
+  ],
+  "commitId": "c4d4cee7-c77a-4122-a10e-71f2c84b4e6c",
+  "commitTimeStamp": "2026-04-10T00:45:35.6126545+00:00",
+  "count": 1,
+  "items": [
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies/index.json#page/1.0.0-preview.1/1.0.3",
+      "@type": "catalog:CatalogPage",
+      "commitId": "c4d4cee7-c77a-4122-a10e-71f2c84b4e6c",
+      "commitTimeStamp": "2026-04-10T00:45:35.6126545+00:00",
+      "count": 1,
+      "items": [
+        {
+          "@id": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies/1.0.0.json",
+          "@type": "Package",
+          "commitId": "209fda03-1fa6-4f20-97b5-8dda903805f7",
+          "commitTimeStamp": "2020-02-08T09:10:42.1477804+00:00",
+          "catalogEntry": {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json",
+            "@type": "PackageDetails",
+            "authors": "Microsoft",
+            "dependencyGroups": [
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework2.0",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework2.0/microsoft.netframework.referenceassemblies.net20",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net20",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net20/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework2.0"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.0",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.0/microsoft.netframework.referenceassemblies.net40",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net40",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net40/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.0"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.5",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.5/microsoft.netframework.referenceassemblies.net45",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net45",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net45/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.5"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.5.1",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.5.1/microsoft.netframework.referenceassemblies.net451",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net451",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net451/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.5.1"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.5.2",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.5.2/microsoft.netframework.referenceassemblies.net452",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net452",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net452/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.5.2"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.6",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.6/microsoft.netframework.referenceassemblies.net46",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net46",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net46/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.6"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.6.1",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.6.1/microsoft.netframework.referenceassemblies.net461",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net461",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net461/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.6.1"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.6.2",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.6.2/microsoft.netframework.referenceassemblies.net462",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net462",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net462/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.6.2"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.7",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.7/microsoft.netframework.referenceassemblies.net47",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net47",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net47/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.7"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.7.1",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.7.1/microsoft.netframework.referenceassemblies.net471",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net471",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net471/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.7.1"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.7.2",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.7.2/microsoft.netframework.referenceassemblies.net472",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net472",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net472/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.7.2"
+              },
+              {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.8",
+                "@type": "PackageDependencyGroup",
+                "dependencies": [
+                  {
+                    "@id": "https://api.nuget.org/v3/catalog0/data/2019.12.02.17.25.43/microsoft.netframework.referenceassemblies.1.0.0.json#dependencygroup/.netframework4.8/microsoft.netframework.referenceassemblies.net48",
+                    "@type": "PackageDependency",
+                    "id": "Microsoft.NETFramework.ReferenceAssemblies.net48",
+                    "range": "[1.0.0, )",
+                    "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies.net48/index.json"
+                  }
+                ],
+                "targetFramework": ".NETFramework4.8"
+              }
+            ],
+            "description": "Microsoft .NET Framework Reference Assemblies",
+            "iconUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.netframework.referenceassemblies/1.0.0/icon",
+            "id": "Microsoft.NETFramework.ReferenceAssemblies",
+            "language": "",
+            "licenseExpression": "",
+            "licenseUrl": "https://github.com/Microsoft/dotnet/blob/master/LICENSE",
+            "listed": true,
+            "minClientVersion": "",
+            "packageContent": "https://api.nuget.org/v3-flatcontainer/microsoft.netframework.referenceassemblies/1.0.0/microsoft.netframework.referenceassemblies.1.0.0.nupkg",
+            "projectUrl": "https://github.com/Microsoft/dotnet/tree/master/releases/reference-assemblies",
+            "published": "2019-12-02T17:23:18.11+00:00",
+            "requireLicenseAcceptance": false,
+            "summary": "",
+            "tags": [
+              ""
+            ],
+            "title": "",
+            "version": "1.0.0"
+          },
+          "packageContent": "https://api.nuget.org/v3-flatcontainer/microsoft.netframework.referenceassemblies/1.0.0/microsoft.netframework.referenceassemblies.1.0.0.nupkg",
+          "registration": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies/index.json"
+        }
+      ],
+      "parent": "https://api.nuget.org/v3/registration5-gz-semver2/microsoft.netframework.referenceassemblies/index.json",
+      "lower": "1.0.0-preview.1",
+      "upper": "1.0.3"
+    }
+  ],
+  "@context": {
+    "@vocab": "http://schema.nuget.org/schema#",
+    "catalog": "http://schema.nuget.org/catalog#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "items": {
+      "@id": "catalog:item",
+      "@container": "@set"
+    },
+    "commitTimeStamp": {
+      "@id": "catalog:commitTimeStamp",
+      "@type": "xsd:dateTime"
+    },
+    "commitId": {
+      "@id": "catalog:commitId"
+    },
+    "count": {
+      "@id": "catalog:count"
+    },
+    "parent": {
+      "@id": "catalog:parent",
+      "@type": "@id"
+    },
+    "tags": {
+      "@id": "tag",
+      "@container": "@set"
+    },
+    "reasons": {
+      "@container": "@set"
+    },
+    "packageTargetFrameworks": {
+      "@id": "packageTargetFramework",
+      "@container": "@set"
+    },
+    "dependencyGroups": {
+      "@id": "dependencyGroup",
+      "@container": "@set"
+    },
+    "dependencies": {
+      "@id": "dependency",
+      "@container": "@set"
+    },
+    "packageContent": {
+      "@type": "@id"
+    },
+    "published": {
+      "@type": "xsd:dateTime"
+    },
+    "registration": {
+      "@type": "@id"
+    }
+  }
+}

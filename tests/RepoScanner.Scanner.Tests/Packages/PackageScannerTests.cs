@@ -60,25 +60,26 @@ namespace RepoScanner.Scanner.Tests.Packages
             Assert.That(_scanner.ScannerType, Is.EqualTo(ScannerType.Package));
         }
 
-        // Issue 5 criterion 1: known-vulnerable versions give PKG001 findings with the right severity and link
+        // Issue 5 criteria 1 and 5: known-vulnerable versions give PKG001 findings with the right severity and
+        // link, and deprecated ones PKG002 findings with their reasons and any alternative
         [Test]
         public async Task ScanAsync_OnTheFixture_FindsExactlyTheLabelledPackages()
         {
             IReadOnlyList<RawFinding> findings = await _scanner.ScanAsync(FixturePackages.FolderPath, CancellationToken.None);
 
-            Assert.That(findings.Select(finding => new FixturePackage(finding.FilePath, finding.LineNumber!.Value, finding.PackageName!,
+            Assert.That(findings.Select(finding => new FixturePackage(finding.RuleId, finding.FilePath, finding.LineNumber!.Value, finding.PackageName!,
                 finding.PackageVersion!, finding.AdvisoryUrl!, finding.Severity, finding.Message)), Is.EqualTo(FixturePackages.All));
         }
 
         [Test]
-        public async Task ScanAsync_OnTheFixture_GivesPkg001PackageFindingsTheFingerprintAccepts()
+        public async Task ScanAsync_OnTheFixture_GivesPackageFindingsTheFingerprintAccepts()
         {
             IReadOnlyList<RawFinding> findings = await _scanner.ScanAsync(FixturePackages.FolderPath, CancellationToken.None);
 
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(findings, Is.Not.Empty);
-                Assert.That(findings.Select(finding => finding.RuleId), Is.All.EqualTo("PKG001"));
+                Assert.That(findings.Select(finding => finding.RuleId), Is.All.AnyOf("PKG001", "PKG002"));
                 Assert.That(findings.Select(finding => finding.ScannerType), Is.All.EqualTo(ScannerType.Package));
                 Assert.That(findings.Select(finding => finding.MaskedPreview ?? finding.SecretHash ?? finding.SnippetHash), Is.All.Null);
                 Assert.That(() => findings.Select(FingerprintCalculator.Calculate).ToList(), Throws.Nothing);
@@ -95,8 +96,8 @@ namespace RepoScanner.Scanner.Tests.Packages
             {
                 Assert.That(summary.Level, Is.EqualTo(LogLevel.Information));
                 Assert.That(summary.GetStructuredStateValue("ProjectFileCount"), Is.EqualTo("6"));
-                Assert.That(summary.GetStructuredStateValue("PackageCount"), Is.EqualTo("7"));
-                Assert.That(summary.GetStructuredStateValue("FindingCount"), Is.EqualTo("6"));
+                Assert.That(summary.GetStructuredStateValue("PackageCount"), Is.EqualTo("8"));
+                Assert.That(summary.GetStructuredStateValue("FindingCount"), Is.EqualTo("8"));
                 Assert.That(summary.GetStructuredStateValue("InvalidFileCount"), Is.EqualTo("1"));
                 Assert.That(summary.GetStructuredStateValue("PropertyVersionCount"), Is.EqualTo("1"));
                 Assert.That(summary.GetStructuredStateValue("MissingVersionCount"), Is.EqualTo("0"));
@@ -105,17 +106,70 @@ namespace RepoScanner.Scanner.Tests.Packages
             }
         }
 
-        // A package with no advisories needs no version: Microsoft.CrmSdk.CoreAssemblies 9.0.2.* in the
-        // plug-in project costs no version-list request, while Newtonsoft.Json 12.0.* needs one
+        // Deprecation needs the real version even when there are no advisories (#75, decision 29, which replaced
+        // #46's shortcut): Microsoft.CrmSdk.CoreAssemblies 9.0.2.* in the plug-in project is resolved to 9.0.2.60
+        // and its metadata read
         [Test]
-        public async Task ScanAsync_APackageWithNoAdvisories_IsNotResolved()
+        public async Task ScanAsync_AFloatingVersionOfAPackageWithNoAdvisories_IsStillResolvedForDeprecation()
         {
             await _scanner.ScanAsync(FixturePackages.FolderPath, CancellationToken.None);
 
             using (Assert.EnterMultipleScope())
             {
-                Assert.That(_nuGet.RequestCount(FakeNuGet.VersionListUrl("Microsoft.CrmSdk.CoreAssemblies")), Is.Zero);
-                Assert.That(_nuGet.RequestCount(FakeNuGet.VersionListUrl("Newtonsoft.Json")), Is.EqualTo(1));
+                Assert.That(_nuGet.RequestCount(FakeNuGet.VersionListUrl("Microsoft.CrmSdk.CoreAssemblies")), Is.EqualTo(1));
+                Assert.That(_nuGet.RequestCount(FakeNuGet.RegistrationIndexUrl("Microsoft.CrmSdk.CoreAssemblies")), Is.EqualTo(1));
+            }
+        }
+
+        // The victim repository's Microsoft.Data.SqlClient 5.1.0: vulnerable (PKG001) and deprecated for critical
+        // bugs (PKG002), so two findings on one line, which never share a fingerprint
+        [Test]
+        public async Task ScanAsync_AVersionThatIsVulnerableAndDeprecated_GivesBothFindings()
+        {
+            WriteProject("<PackageReference Include=\"Microsoft.Data.SqlClient\" Version=\"5.1.0\" />");
+
+            IReadOnlyList<RawFinding> findings = await _scanner.ScanAsync(_folder.FullPath, CancellationToken.None);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(findings.Select(finding => (finding.RuleId, finding.Severity, finding.AdvisoryUrl)), Is.EqualTo(new[]
+                {
+                    ("PKG001", Severity.High, "https://github.com/advisories/GHSA-98g6-xh36-x2p7"),
+                    ("PKG002", Severity.High, "https://www.nuget.org/packages/microsoft.data.sqlclient/5.1.0")
+                }));
+                Assert.That(findings[1].Message, Is.EqualTo("Microsoft.Data.SqlClient 5.1.0 is deprecated (critical bugs)"));
+                Assert.That(findings.Select(FingerprintCalculator.Calculate).Distinct().Count(), Is.EqualTo(2));
+            }
+        }
+
+        [Test]
+        public async Task ScanAsync_AResolvedDeprecatedVersion_SaysWhatWasWritten()
+        {
+            _nuGet.Respond(FakeNuGet.VersionListUrl("Microsoft.Azure.Storage.Blob"), "{ \"versions\": [ \"11.2.2\", \"11.2.3\" ] }");
+            WriteProject("<PackageReference Include=\"Microsoft.Azure.Storage.Blob\" Version=\"11.2.*\" />");
+
+            RawFinding finding = (await _scanner.ScanAsync(_folder.FullPath, CancellationToken.None)).Single();
+
+            Assert.That(finding.Message, Is.EqualTo("Microsoft.Azure.Storage.Blob 11.2.3 (from 11.2.*) is deprecated (legacy); use Azure.Storage.Blobs instead"));
+        }
+
+        [Test]
+        public async Task ScanAsync_AnUnknownDeprecationReason_IsLowWithAWarningNamingThePackage()
+        {
+            _nuGet.Respond(FakeNuGet.RegistrationIndexUrl("Serilog"),
+                "{ \"items\": [ { \"@id\": \"" + FakeNuGet.RegistrationsBaseUrl + "serilog/index.json#page/3.0.0/3.9.9\", \"lower\": \"3.0.0\", \"upper\": \"3.9.9\", " +
+                "\"items\": [ { \"catalogEntry\": { \"id\": \"Serilog\", \"version\": \"3.1.1\", \"deprecation\": { \"reasons\": [ \"SomethingNew\" ] } } } ] } ] }");
+            WriteProject("<PackageReference Include=\"Serilog\" Version=\"3.1.1\" />");
+
+            RawFinding finding = (await _scanner.ScanAsync(_folder.FullPath, CancellationToken.None)).Single();
+
+            FakeLogRecord warning = _logger.Collector.GetSnapshot().Single(record => record.Level == LogLevel.Warning);
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(finding.RuleId, Is.EqualTo("PKG002"));
+                Assert.That(finding.Severity, Is.EqualTo(Severity.Low));
+                Assert.That(finding.Message, Is.EqualTo("Serilog 3.1.1 is deprecated (somethingnew)"));
+                Assert.That(warning.GetStructuredStateValue("PackageId"), Is.EqualTo("Serilog"));
             }
         }
 

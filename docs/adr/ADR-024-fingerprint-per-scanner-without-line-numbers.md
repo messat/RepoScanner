@@ -41,3 +41,5 @@ Changing any formula, or how Issue 6 tidies the code, changes existing fingerpri
 ## Amendments
 
 **2026-09-27 (Issue 5, #43):** For a package, the file path is the file where the version is set: the `.csproj`, or `Directory.Packages.props` when the version is set centrally (Central Package Management). One vulnerable version set centrally is then one finding, in the place it is fixed, rather than one per project that uses it. The formula is unchanged; only what "project file path" names is made exact.
+
+**2026-09-28 (Issue 5, #75):** `PKG002`, a deprecated package version, uses the same package formula. A deprecation has no advisory, so the link part is the version's nuget.org page, with the lower-case package ID and the normalised version, for example `https://www.nuget.org/packages/microsoft.data.sqlclient/5.1.0`, so writing the ID or version differently in a project does not change it. The rule ID keeps one version's `PKG001` and `PKG002` findings apart. The formula is unchanged.

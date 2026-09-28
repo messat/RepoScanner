@@ -39,7 +39,10 @@ namespace RepoScanner.Scanner.Tests.Packages
                 new DeclaredPackage("legacy/Plugins/Plugins.csproj", 20, "Microsoft.NETFramework.ReferenceAssemblies", "1.0.0"),
 
                 new DeclaredPackage("plain/Plain.csproj", 9, "Newtonsoft.Json", "12.0.*"),
-                new DeclaredPackage("plain/Plain.csproj", 11, "System.Text.Json", "8.0.3")
+                new DeclaredPackage("plain/Plain.csproj", 11, "System.Text.Json", "8.0.3"),
+
+                // Deprecated, with an alternative named (#75)
+                new DeclaredPackage("plain/Plain.csproj", 12, "Microsoft.Azure.Storage.Blob", "11.2.3")
             };
 
             Assert.That(_result.Packages, Is.EqualTo(expected));
