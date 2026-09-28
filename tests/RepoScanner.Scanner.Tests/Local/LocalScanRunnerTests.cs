@@ -265,12 +265,33 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
-        // ADR-013: a failed scan is always visible in ScanRuns
+        // ADR-013: a failed scan is always visible in ScanRuns. With its only scanner failed, the run is Failed,
+        // and it keeps that scanner's result and says which scanner failed (#32)
         [Test]
-        public async Task RunAsync_WhenAScannerFails_MarksTheRunFailedAndRethrows()
+        public async Task RunAsync_WhenItsOnlyScannerFails_MarksTheRunFailedAndRethrows()
         {
             await Assert.ThatAsync(() => RunAsync(new StubScanner(new InvalidOperationException("Simulated failure"))),
                 Throws.InvalidOperationException);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Include(saved => saved.ScannerResults).Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Failed));
+                    Assert.That(run.ErrorMessage, Is.EqualTo("Secret scanner failed: Simulated failure"));
+                    Assert.That(run.CompletedUtc, Is.Not.Null);
+                    Assert.That(run.ScannerResults.Select(result => result.Status), Is.EqualTo(new[] { ScannerStatus.Failed }));
+                }
+            }
+        }
+
+        // #32: some scanners failed and some succeeded
+        [Test]
+        public async Task RunAsync_WhenOneOfTwoScannersFails_MarksTheRunPartiallyCompletedSayingWhichFailed()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")), FailingPackageScanner("nuget.org data could not be downloaded"));
 
             using (ScannerDbContext context = _database.CreateContext())
             {
@@ -278,9 +299,64 @@ namespace RepoScanner.Scanner.Tests.Local
 
                 using (Assert.EnterMultipleScope())
                 {
-                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Failed));
-                    Assert.That(run.ErrorMessage, Is.EqualTo("Simulated failure"));
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.PartiallyCompleted));
+                    Assert.That(run.ErrorMessage, Is.EqualTo("Package scanner failed: nuget.org data could not be downloaded"));
+                    Assert.That(run.NewCount, Is.EqualTo(1));
                     Assert.That(run.CompletedUtc, Is.Not.Null);
+                }
+            }
+        }
+
+        // A partly failed run is not an error for the process: it is saved, and the warning says why
+        [Test]
+        public async Task RunAsync_WhenOneOfTwoScannersFails_LogsAWarningForThePartiallyCompletedRun()
+        {
+            await RunAsync(new StubScanner(), FailingPackageScanner("nuget.org data could not be downloaded"));
+
+            FakeLogRecord warning = _logger.Collector.GetSnapshot().Last(record => record.Level == LogLevel.Warning);
+            Assert.That(warning.GetStructuredStateValue("ErrorMessage"), Is.EqualTo("Package scanner failed: nuget.org data could not be downloaded"));
+        }
+
+        // #32: with every scanner failed there is nothing to reconcile. The run is Failed, recorded once with every
+        // scanner's result and each one's reason, and the first failure is rethrown, so the process exits with 1.
+        [Test]
+        public async Task RunAsync_WhenEveryScannerFails_MarksTheRunFailedWithEachScannersReason()
+        {
+            StubScanner secrets = new StubScanner(new InvalidOperationException("Disk read failed"));
+
+            await Assert.ThatAsync(() => RunAsync(secrets, FailingPackageScanner("nuget.org data could not be downloaded")),
+                Throws.InvalidOperationException.With.Message.EqualTo("Disk read failed"));
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Include(saved => saved.ScannerResults).Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Failed));
+                    Assert.That(run.ErrorMessage, Is.EqualTo("Secret scanner failed: Disk read failed; Package scanner failed: nuget.org data could not be downloaded"));
+                    Assert.That(run.ScannerResults.Select(result => (result.ScannerType, result.Status)), Is.EquivalentTo(new[]
+                    {
+                        (ScannerType.Secret, ScannerStatus.Failed),
+                        (ScannerType.Package, ScannerStatus.Failed)
+                    }));
+                }
+            }
+        }
+
+        [Test]
+        public async Task RunAsync_WhenEveryScannerSucceeds_MarksTheRunCompletedWithNoError()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")), new StubScanner() { ScannerType = ScannerType.Package });
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Completed));
+                    Assert.That(run.ErrorMessage, Is.Null);
                 }
             }
         }
@@ -347,7 +423,9 @@ namespace RepoScanner.Scanner.Tests.Local
         {
             await RunAsync(new StubScanner(), FailingPackageScanner("nuget.org data could not be downloaded"));
 
-            FakeLogRecord warning = _logger.Collector.GetSnapshot().Single(record => record.Level == LogLevel.Warning);
+            // The scanner's own warning; the run's "partially completed" warning follows it (#32)
+            FakeLogRecord warning = _logger.Collector.GetSnapshot()
+                .Single(record => record.Level == LogLevel.Warning && record.GetStructuredStateValue("ScannerType") != null);
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(warning.GetStructuredStateValue("ScannerType"), Is.EqualTo("Package"));

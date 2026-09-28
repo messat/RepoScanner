@@ -63,6 +63,9 @@ namespace RepoScanner.Scanner.Local
             _logger.LogInformation("Scanning {Folder} as scan run {ScanRunId}", folder, scanRun.Id);
 
             Stopwatch duration = Stopwatch.StartNew();
+
+            // Set once the run's outcome is saved, so a failure rethrown after that is not recorded a second time
+            bool recorded = false;
             try
             {
                 List<RawFinding> found = new List<RawFinding>();
@@ -109,40 +112,71 @@ namespace RepoScanner.Scanner.Local
                     found.AddRange(scannerFindings);
                 }
 
-                // With no scanner left, the run fails as before; #32 records it with every scanner's result
+                // Which scanners failed and why, for ScanRun.ErrorMessage (ADR-013); null when none failed
+                string? failures = FailureSummary(results);
+
                 if (firstFailure != null && completedScannerTypes.Count == 0)
                 {
+                    // Every scanner failed, so there is nothing to reconcile. The run is Failed with every scanner's
+                    // result, and the first failure goes on to Program, which exits with 1 (#32).
+                    ScanRunCompletion failed = new ScanRunCompletion(
+                        ScanRunStatus.Failed, CommitSha: null, DateTime.UtcNow, NewCount: 0, ReopenedCount: 0, ResolvedCount: 0, failures, results);
+                    await _scanRuns.CompleteRunAsync(scanRun.Id, failed, cancellationToken);
+                    recorded = true;
+
                     ExceptionDispatchInfo.Throw(firstFailure);
                 }
 
                 ReconciliationResult reconciliation = await ReconcileAsync(scanRun, found, completedScannerTypes, cancellationToken);
 
+                // Some scanners failed and some succeeded: the findings of those that succeeded are saved, and the
+                // run says the rest are out of date (#32). The process still exits with 0: the run did its job.
+                ScanRunStatus status = failures == null ? ScanRunStatus.Completed : ScanRunStatus.PartiallyCompleted;
                 ScanRunCompletion completion = new ScanRunCompletion(
-                    ScanRunStatus.Completed,
+                    status,
                     CommitSha: null,
                     DateTime.UtcNow,
                     reconciliation.NewCount,
                     reconciliation.ReopenedCount,
                     reconciliation.ResolvedCount,
-                    ErrorMessage: null,
+                    failures,
                     results);
                 await _scanRuns.CompleteRunAsync(scanRun.Id, completion, cancellationToken);
+                recorded = true;
 
                 _logger.LogInformation(
-                    "Scan run {ScanRunId} completed in {DurationMs} ms: {FoundCount} found, {NewCount} new, {ReopenedCount} reopened, {ResolvedCount} resolved, {SuppressionExpiredCount} suppressions expired",
+                    "Scan run {ScanRunId} {Status} in {DurationMs} ms: {FoundCount} found, {NewCount} new, {ReopenedCount} reopened, {ResolvedCount} resolved, {SuppressionExpiredCount} suppressions expired",
                     scanRun.Id,
+                    status,
                     duration.ElapsedMilliseconds,
                     found.Count,
                     reconciliation.NewCount,
                     reconciliation.ReopenedCount,
                     reconciliation.ResolvedCount,
                     reconciliation.SuppressionExpiredCount);
+
+                if (failures != null)
+                {
+                    _logger.LogWarning("Scan run {ScanRunId} partially completed: {ErrorMessage}", scanRun.Id, failures);
+                }
             }
-            catch (Exception exception)
+            catch (Exception exception) when (!recorded)
             {
                 await RecordFailureAsync(scanRun.Id, exception);
                 throw;
             }
+        }
+
+        // One part per failed scanner, in the order they ran, such as "Package scanner failed: nuget.org data could
+        // not be downloaded ...". Null when every scanner succeeded.
+        private static string? FailureSummary(IReadOnlyList<ScannerResult> results)
+        {
+            List<string> parts = results
+                .Where(result => result.Status == ScannerStatus.Failed)
+                .Select(result => result.ScannerType + " scanner failed: " + result.ErrorMessage)
+                .ToList();
+
+            return parts.Count == 0 ? null : string.Join("; ", parts);
         }
 
         // Compares what was found with the findings already stored for the folder and saves the changes
