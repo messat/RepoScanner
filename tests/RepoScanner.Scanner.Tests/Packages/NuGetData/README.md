@@ -11,3 +11,5 @@
 | `versions/<id>.json` | the `PackageBaseAddress/3.0.0` resource, `<id>/index.json` | No |
 
 A package with no file under `versions/` is answered with 404, as nuget.org answers for a package it does not know.
+
+The files are kept here as plain JSON so they can be read, but nuget.org sends the vulnerability index and its pages gzip-compressed, with `Content-Encoding: gzip`, even when the client does not ask for it. `FakeNuGet` compresses those three the same way, so the tests read what the scanner really receives. Tools such as PowerShell's `Invoke-WebRequest` decompress silently, so to see what nuget.org really sends, use `curl.exe -D - -o reply.bin <address>` without `--compressed`.

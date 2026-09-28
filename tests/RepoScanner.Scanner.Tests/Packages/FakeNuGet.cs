@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -28,6 +30,8 @@ namespace RepoScanner.Scanner.Tests.Packages
         private readonly object _lock = new object();
         private readonly Dictionary<string, string> _files = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _replacedBodies = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _gzipUrls = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _corruptGzipUrls = new HashSet<string>(StringComparer.Ordinal);
         private readonly List<SeenRequest> _requests = new List<SeenRequest>();
         private readonly List<string> _unknownAddresses = new List<string>();
         private string? _failingUrl;
@@ -51,6 +55,7 @@ namespace RepoScanner.Scanner.Tests.Packages
 
             BasePageUrl = _files.Single(file => file.Value == "vulnerability-base.json").Key;
             UpdatePageUrl = _files.Single(file => file.Value == "vulnerability-update.json").Key;
+            _gzipUrls.UnionWith(new[] { VulnerabilityIndexUrl, BasePageUrl, UpdatePageUrl });
         }
 
         public string BasePageUrl { get; }
@@ -96,6 +101,15 @@ namespace RepoScanner.Scanner.Tests.Packages
             lock (_lock)
             {
                 _replacedBodies[url] = body;
+            }
+        }
+
+        // Answers this address with Content-Encoding: gzip and a body that is not gzip
+        public void RespondWithCorruptGzip(string url)
+        {
+            lock (_lock)
+            {
+                _corruptGzipUrls.Add(url);
             }
         }
 
@@ -160,15 +174,20 @@ namespace RepoScanner.Scanner.Tests.Packages
                     return new HttpResponseMessage(_failureStatus);
                 }
 
+                if (_corruptGzipUrls.Contains(url))
+                {
+                    return Gzip(Encoding.UTF8.GetBytes("this is not gzip"));
+                }
+
                 if (_replacedBodies.TryGetValue(url, out string? replaced))
                 {
-                    return Json(replaced);
+                    return Json(url, replaced);
                 }
             }
 
             if (_files.TryGetValue(url, out string? file))
             {
-                return Json(File.ReadAllText(Path.Combine(DataFolder, file)));
+                return Json(url, File.ReadAllText(Path.Combine(DataFolder, file)));
             }
 
             if (url.StartsWith(PackageBaseAddress, StringComparison.Ordinal) && url.EndsWith("/index.json", StringComparison.Ordinal))
@@ -177,7 +196,7 @@ namespace RepoScanner.Scanner.Tests.Packages
                 string packageId = url.Substring(PackageBaseAddress.Length, url.Length - PackageBaseAddress.Length - "/index.json".Length);
                 string versionsFile = Path.Combine(DataFolder, "versions", packageId + ".json");
 
-                return File.Exists(versionsFile) ? Json(File.ReadAllText(versionsFile)) : new HttpResponseMessage(HttpStatusCode.NotFound);
+                return File.Exists(versionsFile) ? Json(url, File.ReadAllText(versionsFile)) : new HttpResponseMessage(HttpStatusCode.NotFound);
             }
 
             lock (_lock)
@@ -188,9 +207,33 @@ namespace RepoScanner.Scanner.Tests.Packages
             throw new InvalidOperationException("FakeNuGet does not know " + url + ": a test must not reach the internet");
         }
 
-        private static HttpResponseMessage Json(string body)
+        // As nuget.org sends it: the vulnerability index and its pages gzip-compressed with Content-Encoding: gzip,
+        // whatever the client asks for (checked on 2026-09-28), and everything else as plain JSON
+        private HttpResponseMessage Json(string url, string body)
         {
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+            if (!_gzipUrls.Contains(url))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+            }
+
+            using (MemoryStream compressed = new MemoryStream())
+            {
+                using (GZipStream gzip = new GZipStream(compressed, CompressionMode.Compress, leaveOpen: true))
+                {
+                    gzip.Write(Encoding.UTF8.GetBytes(body));
+                }
+
+                return Gzip(compressed.ToArray());
+            }
+        }
+
+        private static HttpResponseMessage Gzip(byte[] bytes)
+        {
+            ByteArrayContent content = new ByteArrayContent(bytes);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            content.Headers.ContentEncoding.Add("gzip");
+
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
         }
 
         public sealed record SeenRequest(string Url, string UserAgent);
