@@ -114,7 +114,7 @@ namespace RepoScanner.Scanner.Tests
                 using (Assert.EnterMultipleScope())
                 {
                     Assert.That(ruleIds, Is.EquivalentTo(new string[] { "SEC001", "SEC002", "SEC003", "SEC004", "SEC005", "SEC006", "SEC007" }));
-                    Assert.That(host.Services.GetServices<IScanner>().Single(), Is.TypeOf<SecretScanner>());
+                    Assert.That(host.Services.GetServices<IScanner>().OfType<SecretScanner>(), Has.Exactly(1).Items);
                 }
             }
         }

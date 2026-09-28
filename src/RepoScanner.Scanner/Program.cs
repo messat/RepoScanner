@@ -13,6 +13,7 @@ using RepoScanner.Data.Repositories;
 using RepoScanner.Scanner.Configuration;
 using RepoScanner.Scanner.Files;
 using RepoScanner.Scanner.Local;
+using RepoScanner.Scanner.Packages;
 using RepoScanner.Scanner.Secrets;
 using RepoScanner.Scanner.Secrets.Rules;
 using Serilog;
@@ -171,6 +172,12 @@ namespace RepoScanner.Scanner
             builder.Services.AddSingleton<ISecretRule, Sec006NuGetApiKeyRule>();
             builder.Services.AddSingleton<ISecretRule, Sec007NamedSettingRule>();
             builder.Services.AddSingleton<IScanner, SecretScanner>();
+
+            // The package scanner (#43 to #46), registered after the secret scanner, so it runs second. Singletons:
+            // the nuget.org client keeps what it downloads for the whole execution (ADR-026).
+            builder.Services.AddSingleton<ProjectFileReader>();
+            NuGetVulnerabilityIndexClient.Register(builder.Services);
+            builder.Services.AddSingleton<IScanner, PackageScanner>();
 
             if (LocalPathArgument.TryGet(args, out _))
             {

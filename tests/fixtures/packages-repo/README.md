@@ -14,4 +14,4 @@ Scan it with:
     dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/packages-repo
 
 The `.reposcanner-exclude` file stops these packages being reported when the whole RepoScanner repository is scanned.
-What the reader must find is in `tests/RepoScanner.Scanner.Tests/Packages/FixtureProjectFilesTests.cs`.
+What the reader must find is in `tests/RepoScanner.Scanner.Tests/Packages/FixtureProjectFilesTests.cs`, and the findings the scanner must report are in `tests/RepoScanner.Scanner.Tests/Packages/FixturePackages.cs`.

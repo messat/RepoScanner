@@ -1,4 +1,3 @@
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -13,8 +12,6 @@ namespace RepoScanner.Scanner.Tests.Packages
     [TestFixture]
     public class FixtureProjectFilesTests
     {
-        public static string FolderPath { get; } = Path.Combine(RepositoryRoot.FullPath, "tests", "fixtures", "packages-repo");
-
         private ProjectFileReadResult _result = null!;
 
         [OneTimeSetUp]
@@ -23,7 +20,7 @@ namespace RepoScanner.Scanner.Tests.Packages
             ProjectFileReader reader = new ProjectFileReader(
                 new RepositoryFileWalker(NullLogger<RepositoryFileWalker>.Instance), NullLogger<ProjectFileReader>.Instance);
 
-            _result = await reader.ReadAsync(FolderPath, CancellationToken.None);
+            _result = await reader.ReadAsync(FixturePackages.FolderPath, CancellationToken.None);
         }
 
         [Test]
