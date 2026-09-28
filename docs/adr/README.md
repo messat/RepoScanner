@@ -2,7 +2,7 @@
 
 Each file records one decision: the context that forced it, what was decided, and what follows from it.
 
-ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADRs v2*, which is canonical for those numbers. ADR-020 onwards were decided while building this repository. The next new ADR is **ADR-026**.
+ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADRs v2*, which is canonical for those numbers. ADR-020 onwards were decided while building this repository. The next new ADR is **ADR-027**.
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -31,6 +31,7 @@ ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADR
 | [ADR-023](ADR-023-secret-hash-is-an-unsalted-sha-256.md) | The secret hash is an unsalted SHA-256 | Accepted |
 | [ADR-024](ADR-024-fingerprint-per-scanner-without-line-numbers.md) | A fingerprint per scanner type, without line numbers | Accepted, amended 2026-09-27 |
 | [ADR-025](ADR-025-auto-resolve-only-for-scanners-that-completed.md) | Only a scanner that completed can resolve its findings | Accepted |
+| [ADR-026](ADR-026-package-vulnerabilities-from-nuget-org-without-a-restore.md) | Package vulnerabilities come from nuget.org's vulnerability files, without a restore | Accepted |
 
 ## Writing a new ADR
 

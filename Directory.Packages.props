@@ -28,6 +28,12 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
   </ItemGroup>
 
+  <!-- Package scanner: NuGet's version and range rules, and retries and timeouts for nuget.org (Issue 5) -->
+  <ItemGroup>
+    <PackageVersion Include="NuGet.Versioning" Version="7.9.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
+  </ItemGroup>
+
   <!-- Testing -->
   <ItemGroup>
     <!-- In-memory SQLite database for the Data tests -->
