@@ -19,3 +19,7 @@ In Issue 4, local mode passes every scanner it ran, because a scanner that throw
 While a scanner keeps failing, its findings keep their last status, even if they have since been fixed. That is stale rather than wrong: its `ScannerResults` row shows `Failed`, and from Issue 5 the run shows `PartiallyCompleted`, so the dashboard can show that those results are out of date. A scanner type that is not run at all, such as the package scanner in local mode, never resolves its findings either.
 
 Resolving anyway was rejected: it would mark every finding of a failed scanner as fixed. Skipping reconciliation for the whole run when any scanner fails was rejected: one broken scanner would stop every other scanner's findings from resolving.
+
+## Amendments
+
+**2026-09-28 (Issue 5, #74):** `LocalScanRunner` now carries on when one scanner throws: that scanner gets a `Failed` `ScannerResults` row with its error, and only the scanners that succeeded are passed as `completedScannerTypes`. A cancelled run is not a scanner failing and still ends the run. Local mode now runs the package scanner as well, so the example above of a scanner type that is not run at all, "the package scanner in local mode", no longer applies there; a type that is not registered still never resolves its findings. The decision is unchanged.

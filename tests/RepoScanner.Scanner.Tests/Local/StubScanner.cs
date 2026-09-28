@@ -25,10 +25,20 @@ namespace RepoScanner.Scanner.Tests.Local
             _failure = failure;
         }
 
-        public ScannerType ScannerType => ScannerType.Secret;
+        // Secret unless a test needs a second scanner type
+        public ScannerType ScannerType { get; init; } = ScannerType.Secret;
+
+        // How many times the runner has run it
+        public int CallCount { get; private set; }
+
+        // Runs as the scan starts, for example to stop the run partway
+        public Action? OnScan { get; init; }
 
         public Task<IReadOnlyList<RawFinding>> ScanAsync(string rootPath, CancellationToken cancellationToken)
         {
+            CallCount++;
+            OnScan?.Invoke();
+
             return _failure == null
                 ? Task.FromResult(_findings)
                 : Task.FromException<IReadOnlyList<RawFinding>>(_failure);

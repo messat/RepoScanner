@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
 using NUnit.Framework;
 using RepoScanner.Core.Entities;
@@ -242,8 +243,8 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
-        // Rule 7 in local mode: only the scanners that ran can resolve, so a package finding, which local
-        // mode's secret scanner could never have seen, is left alone (ADR-025)
+        // Rule 7: only the scanners that ran can resolve, so a package finding, which a secret scanner could
+        // never have seen, is left alone when only a secret scanner runs (ADR-025)
         [Test]
         public async Task RunAsync_LeavesTheFindingsOfScannersThatDidNotRunAlone()
         {
@@ -280,6 +281,121 @@ namespace RepoScanner.Scanner.Tests.Local
                     Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Failed));
                     Assert.That(run.ErrorMessage, Is.EqualTo("Simulated failure"));
                     Assert.That(run.CompletedUtc, Is.Not.Null);
+                }
+            }
+        }
+
+        // #74: one scanner failing, here the package scanner with nuget.org down, does not stop the others
+        [Test]
+        public async Task RunAsync_WhenOneScannerFails_TheOthersFindingsAreStillSaved()
+        {
+            StubScanner packages = FailingPackageScanner("nuget.org data could not be downloaded");
+
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")), packages);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                Assert.That(context.Findings.Select(finding => finding.RuleId), Is.EqualTo(new[] { "SEC003" }));
+            }
+        }
+
+        [Test]
+        public async Task RunAsync_WhenOneScannerFails_RecordsAFailedResultWithItsError()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")), FailingPackageScanner("nuget.org data could not be downloaded"));
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Include(saved => saved.ScannerResults).Single();
+                ScannerResult secrets = run.ScannerResults.Single(result => result.ScannerType == ScannerType.Secret);
+                ScannerResult packages = run.ScannerResults.Single(result => result.ScannerType == ScannerType.Package);
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(secrets.Status, Is.EqualTo(ScannerStatus.Succeeded));
+                    Assert.That(secrets.FindingCount, Is.EqualTo(1));
+                    Assert.That(packages.Status, Is.EqualTo(ScannerStatus.Failed));
+                    Assert.That(packages.FindingCount, Is.Zero);
+                    Assert.That(packages.ErrorMessage, Is.EqualTo("nuget.org data could not be downloaded"));
+                }
+            }
+        }
+
+        // Issue 4's fourth criterion, now at the runner (ADR-025): the secret scanner completed, so its missing
+        // finding is resolved; the package scanner failed, so its finding, not seen this time, stays Open
+        [Test]
+        public async Task RunAsync_WhenOneScannerFails_OnlyTheScannersThatSucceededResolveFindings()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")));
+            AddAPackageFinding();
+
+            await RunAsync(new StubScanner(), FailingPackageScanner("nuget.org data could not be downloaded"));
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(context.Findings.Single(finding => finding.ScannerType == ScannerType.Secret).Status, Is.EqualTo(FindingStatus.Resolved));
+                    Assert.That(context.Findings.Single(finding => finding.ScannerType == ScannerType.Package).Status, Is.EqualTo(FindingStatus.Open));
+                    Assert.That(context.ScanRuns.OrderBy(run => run.Id).Last().ResolvedCount, Is.EqualTo(1));
+                }
+            }
+        }
+
+        [Test]
+        public async Task RunAsync_WhenOneScannerFails_LogsAWarningNamingIt()
+        {
+            await RunAsync(new StubScanner(), FailingPackageScanner("nuget.org data could not be downloaded"));
+
+            FakeLogRecord warning = _logger.Collector.GetSnapshot().Single(record => record.Level == LogLevel.Warning);
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(warning.GetStructuredStateValue("ScannerType"), Is.EqualTo("Package"));
+                Assert.That(warning.Exception, Is.InstanceOf<InvalidOperationException>());
+            }
+        }
+
+        // Stopping the scanner (Ctrl+C, or SIGTERM in Azure) is not a scanner failing: the run stops, and the
+        // scanners after it do not run
+        [Test]
+        public async Task RunAsync_WhenTheRunIsCancelled_StopsAndMarksTheRunFailed()
+        {
+            using (CancellationTokenSource stopping = new CancellationTokenSource())
+            {
+                // Stopped while the first scanner runs, as Ctrl+C would, after the run has started
+                StubScanner cancelled = new StubScanner(new OperationCanceledException(stopping.Token)) { OnScan = stopping.Cancel };
+                StubScanner after = new StubScanner() { ScannerType = ScannerType.Package };
+
+                await Assert.ThatAsync(() => RunAsync(stopping.Token, cancelled, after), Throws.InstanceOf<OperationCanceledException>());
+
+                using (ScannerDbContext context = _database.CreateContext())
+                {
+                    using (Assert.EnterMultipleScope())
+                    {
+                        Assert.That(after.CallCount, Is.Zero);
+                        Assert.That(context.ScanRuns.Single().Status, Is.EqualTo(ScanRunStatus.Failed));
+                    }
+                }
+            }
+        }
+
+        // A timeout inside a scanner can surface as a TaskCanceledException while the run itself carries on:
+        // that is the scanner failing, not the run being stopped
+        [Test]
+        public async Task RunAsync_ACancellationTheRunDidNotAskFor_IsThatScannerFailing()
+        {
+            StubScanner timedOut = new StubScanner(new TaskCanceledException("The request timed out")) { ScannerType = ScannerType.Package };
+
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")), timedOut);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Include(saved => saved.ScannerResults).Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.ScannerResults.Single(result => result.ScannerType == ScannerType.Package).Status, Is.EqualTo(ScannerStatus.Failed));
+                    Assert.That(context.Findings.Count(), Is.EqualTo(1));
                 }
             }
         }
@@ -367,14 +483,25 @@ namespace RepoScanner.Scanner.Tests.Local
             Assert.That(second, Is.Not.EqualTo(first));
         }
 
-        private async Task RunAsync(IScanner scanner)
+        private Task RunAsync(params IScanner[] scanners)
+        {
+            return RunAsync(CancellationToken.None, scanners);
+        }
+
+        private async Task RunAsync(CancellationToken cancellationToken, params IScanner[] scanners)
         {
             using (ScannerDbContext context = _database.CreateContext())
             {
-                LocalScanRunner runner = new LocalScanRunner(new ScanRunRepository(context), new FindingRepository(context), new IScanner[] { scanner }, _logger);
+                LocalScanRunner runner = new LocalScanRunner(new ScanRunRepository(context), new FindingRepository(context), scanners, _logger);
 
-                await runner.RunAsync(Folder, CancellationToken.None);
+                await runner.RunAsync(Folder, cancellationToken);
             }
+        }
+
+        // The package scanner when nuget.org cannot be reached
+        private static StubScanner FailingPackageScanner(string message)
+        {
+            return new StubScanner(new InvalidOperationException(message)) { ScannerType = ScannerType.Package };
         }
 
         // What the dashboard does when a developer suppresses a finding (ADR-019)

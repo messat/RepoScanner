@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -67,10 +68,35 @@ namespace RepoScanner.Scanner.Local
                 List<RawFinding> found = new List<RawFinding>();
                 List<ScannerResult> results = new List<ScannerResult>();
 
+                // Only these can resolve their findings: one that failed found nothing because it did not look,
+                // not because everything was fixed (ADR-025, rule 7)
+                HashSet<ScannerType> completedScannerTypes = new HashSet<ScannerType>();
+                Exception? firstFailure = null;
+
                 foreach (IScanner scanner in _scanners)
                 {
                     Stopwatch scannerDuration = Stopwatch.StartNew();
-                    IReadOnlyList<RawFinding> scannerFindings = await scanner.ScanAsync(folder, cancellationToken);
+                    IReadOnlyList<RawFinding> scannerFindings;
+                    try
+                    {
+                        scannerFindings = await scanner.ScanAsync(folder, cancellationToken);
+                    }
+                    catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        // One scanner failing, such as the package scanner with nuget.org down, does not stop the
+                        // others (#74). A stopped run is not a scanner failing, so that still ends the run below.
+                        _logger.LogWarning(exception, "The {ScannerType} scanner failed; the other scanners carry on", scanner.ScannerType);
+                        results.Add(new ScannerResult
+                        {
+                            ScannerType = scanner.ScannerType,
+                            Status = ScannerStatus.Failed,
+                            FindingCount = 0,
+                            DurationMs = (int)scannerDuration.ElapsedMilliseconds,
+                            ErrorMessage = exception.Message
+                        });
+                        firstFailure ??= exception;
+                        continue;
+                    }
 
                     results.Add(new ScannerResult
                     {
@@ -79,10 +105,17 @@ namespace RepoScanner.Scanner.Local
                         FindingCount = scannerFindings.Count,
                         DurationMs = (int)scannerDuration.ElapsedMilliseconds
                     });
+                    completedScannerTypes.Add(scanner.ScannerType);
                     found.AddRange(scannerFindings);
                 }
 
-                ReconciliationResult reconciliation = await ReconcileAsync(scanRun, found, cancellationToken);
+                // With no scanner left, the run fails as before; #32 records it with every scanner's result
+                if (firstFailure != null && completedScannerTypes.Count == 0)
+                {
+                    ExceptionDispatchInfo.Throw(firstFailure);
+                }
+
+                ReconciliationResult reconciliation = await ReconcileAsync(scanRun, found, completedScannerTypes, cancellationToken);
 
                 ScanRunCompletion completion = new ScanRunCompletion(
                     ScanRunStatus.Completed,
@@ -114,14 +147,10 @@ namespace RepoScanner.Scanner.Local
 
         // Compares what was found with the findings already stored for the folder and saves the changes
         // in one go (Issue 4 design, Local mode)
-        private async Task<ReconciliationResult> ReconcileAsync(ScanRun scanRun, IReadOnlyList<RawFinding> found, CancellationToken cancellationToken)
+        private async Task<ReconciliationResult> ReconcileAsync(
+            ScanRun scanRun, IReadOnlyList<RawFinding> found, IReadOnlySet<ScannerType> completedScannerTypes, CancellationToken cancellationToken)
         {
             IReadOnlyList<Finding> stored = await _findings.GetByRepositoryAsync(scanRun.RepositoryId, cancellationToken);
-
-            // Every scanner that ran has completed, because one that throws fails the whole run before
-            // anything is saved (Issue 4 design, decision 3). Issue 5 (#74) carries on after a failure,
-            // and passes only the scanners that succeeded (ADR-025).
-            HashSet<ScannerType> completedScannerTypes = new HashSet<ScannerType>(_scanners.Select(scanner => scanner.ScannerType));
 
             ReconciliationResult reconciliation = FindingReconciler.Reconcile(stored, found, completedScannerTypes, scanRun, DateTime.UtcNow);
             await _findings.SaveChangesAsync(reconciliation.Changes, cancellationToken);
