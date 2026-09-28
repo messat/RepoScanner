@@ -23,7 +23,7 @@ ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADR
 | [ADR-015](ADR-015-azure-sql-basic-in-uk-west.md) | Azure SQL Basic in UK West | Accepted |
 | [ADR-016](ADR-016-shallow-single-branch-clone-with-the-credential-in-a-header.md) | Shallow, single-branch clone with the credential in a header | Accepted |
 | [ADR-017](ADR-017-everything-runs-locally-before-azure.md) | Everything runs locally before Azure | Accepted, amended 2026-09-24 |
-| [ADR-018](ADR-018-code-pattern-rules-from-a-roslyn-syntax-walker-justified-by-analyser-ids.md) | Code-pattern rules from a Roslyn syntax walker, justified by analyser IDs | Accepted |
+| [ADR-018](ADR-018-code-pattern-rules-from-a-roslyn-syntax-walker-justified-by-analyser-ids.md) | Code-pattern rules from a Roslyn syntax walker, justified by analyser IDs | Accepted, amended 2026-09-28 |
 | [ADR-019](ADR-019-suppression-expires-by-default.md) | Suppression expires by default | Accepted |
 | [ADR-020](ADR-020-branching-strategy-and-branch-policies.md) | Branching strategy and branch policies | Accepted |
 | [ADR-021](ADR-021-explicit-csharp-style-and-build-conventions.md) | Explicit C# style and build conventions, enforced by the build | Accepted |
