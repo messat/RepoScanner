@@ -26,7 +26,7 @@ From Issue 6 (#48):
 |---|---|---|---|
 | 1 | Where the rule set comes from | This document; ADR-018 is amended with it (#55) | ADR-018 lists candidates only, and the spike document is not available |
 | 2 | How many rules | Six, `CP001` to `CP006` | ADR-018 and the board already say six. Each is about a day's work with its tests, and Issues 7 and 8 still follow |
-| 3 | Which rules | SQL built from strings, insecure deserialization, certificate validation switched off, weak hashing, `AllowAnyOrigin()`, and empty `catch` blocks (see Rules) | Security problems that are common in .NET and Dynamics 365 code, each found by a name lookup. Each also has a SonarQube rule the team already sees at work |
+| 3 | Which rules | SQL built from strings, insecure deserialization, certificate validation switched off, weak hashing, `AllowAnyOrigin()`, and empty `catch` blocks (see Rules) | Security problems that are common in .NET and Dynamics 365 code, each found by a name lookup |
 | 4 | What is left out | `new HttpClient()` per call; `Random` for security tokens; cross-site scripting; null references, dead code, infinite loops, resource leaks, duplicate code and long methods | `HttpClient` is reliability, not security. A syntax-only rule cannot tell a token from a dice roll, so it would flag every `Random`. Cross-site scripting lives in `.razor` and `.cshtml` files, which are not parsed. The rest need values traced through the code or a view of the whole project, are code quality rather than security, and SonarQube already reports them |
 | 5 | What a rule cites | The Microsoft analyser ID it mirrors, with its Microsoft Learn page. `CP005` cites the *Enable CORS* page, since no analyser covers it | ADR-018. No ID is made up: an invented CA number could clash with a real one or lead nowhere |
 | 6 | Where the reference is stored | At the end of the message: `(CA2100: https://learn.microsoft.com/...)` | No database or dashboard change. `AdvisoryUrl` stays a package column |
@@ -154,16 +154,16 @@ namespace RepoScanner.Scanner.CodePatterns
 
 All six rules match names in the parsed tree, so text in comments and string literals never matches. That includes the C# held in the test project's strings, so the nightly scan of RepoScanner does not report its own tests.
 
-| Rule | Severity | Reference | SonarQube equivalent, for comparison only |
-|---|---|---|---|
-| `CP001` SQL built from strings | High | CA2100 | S2077 |
-| `CP002` Insecure deserialization | High | CA2300, CA2305, CA2310, CA2315, CA2326 | S5773 |
-| `CP003` Certificate validation switched off | High | CA5359 | S4830 |
-| `CP004` Weak hashing | Medium | CA5350, CA5351 | S4790, S5547 |
-| `CP005` Any origin allowed | Medium | Enable CORS | S5122 |
-| `CP006` Empty catch | Low | related to CA1031 | S108, S2486 |
+| Rule | Severity | Reference |
+|---|---|---|
+| `CP001` SQL built from strings | High | CA2100 |
+| `CP002` Insecure deserialization | High | CA2300, CA2305, CA2310, CA2315, CA2326 |
+| `CP003` Certificate validation switched off | High | CA5359 |
+| `CP004` Weak hashing | Medium | CA5350, CA5351 |
+| `CP005` Any origin allowed | Medium | Enable CORS |
+| `CP006` Empty catch | Low | related to CA1031 |
 
-A finding cites only the Microsoft reference (decision 5). The SonarQube column shows that each rule matches one the team already sees at work. In the messages below, `<link>` is the rule's Microsoft Learn page and `<reference>` is the ID with its link, both from `RuleReference`.
+A finding cites only the Microsoft reference (decision 5). In the messages below, `<link>` is the rule's Microsoft Learn page and `<reference>` is the ID with its link, both from `RuleReference`.
 
 ### CP001: SQL built from strings (#50)
 
