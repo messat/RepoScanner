@@ -221,7 +221,7 @@ A finding cites only the Microsoft reference (decision 5). In the messages below
 | `SHA1.Create`, `SHA1.HashData` or `SHA1.HashDataAsync`; `TripleDES.Create` | CA5350 |
 | `new SHA1CryptoServiceProvider()`, `new SHA1Managed()`, `new TripleDESCryptoServiceProvider()` | CA5350 |
 
-**Does not flag:** `SHA256`, `SHA384`, `SHA512`, `Aes`, and the `HMAC` classes.
+**Does not flag:** `SHA256`, `SHA384`, `SHA512`, `Aes`, and the `HMAC` classes; names that only look like an algorithm, such as `MD5Helper.Create()`, a property called `MD5`, or `DES.Parse`.
 
 **Message:** `<Algorithm> is a weak algorithm. Use SHA-256 or stronger, or AES for encryption. If it is only a checksum, suppress this finding with that reason (<reference>)`
 
@@ -231,7 +231,7 @@ A finding cites only the Microsoft reference (decision 5). In the messages below
 
 **Does not flag:** `WithOrigins("https://...")`, or `SetIsOriginAllowed` with a check.
 
-**Message:** `AllowAnyOrigin lets any website call this API from a user's browser. List the allowed origins with WithOrigins (Enable CORS: <link>)`
+**Message:** `Allowing any origin lets any website call this API from a user's browser. List the allowed origins with WithOrigins (Enable CORS: <link>)`. It says "allowing any origin" rather than naming `AllowAnyOrigin`, because `SetIsOriginAllowed(_ => true)` gets the same message.
 
 ### CP006: Empty catch (#53)
 
@@ -280,7 +280,7 @@ Each rule is written test first: a failing test, then the code that makes it pas
 | #50 | Each flagged form and each "does not flag" case under CP001, including the object initialiser and brackets around the SQL; 20,000 literals joined in one `FromSqlRaw` scanned without crashing, because the check for a join of literals loops rather than calling itself; the host registers the rule |
 | #51 | Each row of the CP002 table, in settings and in an attribute; `TypeNameHandling.None` and reading the setting; a fully qualified type name; the reference in each message; the host registers the rule |
 | #52 | Each callback set with `=` and `+=`, in code and in an object initialiser; both lambda forms, an anonymous method, and one wrapped in `new RemoteCertificateValidationCallback(...)`; `DangerousAcceptAnyServerCertificateValidator` assigned and on its own; a callback with a check, a named method, `null`, and a lambda set on a property that is not a certificate callback; the host registers the rule |
-| #53 | Each row of the CP004 table and SHA256; `AllowAnyOrigin`, `SetIsOriginAllowed` with and without a check, `WithOrigins`; an empty catch with a type, without one and with a filter; a comment inside; `throw;` |
+| #53 | Each row of the CP004 table, with the algorithm and analyser ID in each message, and the strong algorithms and lookalike names; `AllowAnyOrigin` alone, in a chain and in a lambda, `SetIsOriginAllowed` with and without a check and with a named method, `WithOrigins`; an empty catch with a type, without one, with a filter and over several lines; a comment inside, `throw;`, logging, and several catches of one try; the host registers all six rules |
 | #54 | The whole scanner over the fixture gives exactly the findings in `FixturePatterns` (criterion 2); nothing from `Quiet/`; every rule appears at least once. The `--path` end-to-end test sees three `ScannerResult` rows |
 
 - The 80% line coverage gate on the Scanner project covers the new classes.

@@ -186,6 +186,9 @@ namespace RepoScanner.Scanner
             builder.Services.AddSingleton<ICodePatternRule, Cp001SqlFromStringsRule>();
             builder.Services.AddSingleton<ICodePatternRule, Cp002InsecureDeserializationRule>();
             builder.Services.AddSingleton<ICodePatternRule, Cp003CertificateValidationDisabledRule>();
+            builder.Services.AddSingleton<ICodePatternRule, Cp004WeakHashingRule>();
+            builder.Services.AddSingleton<ICodePatternRule, Cp005AnyOriginRule>();
+            builder.Services.AddSingleton<ICodePatternRule, Cp006EmptyCatchRule>();
             builder.Services.AddSingleton<IScanner, CodePatternScanner>();
 
             if (LocalPathArgument.TryGet(args, out _))
