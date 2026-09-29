@@ -12,7 +12,7 @@ The scanner finds insecure patterns in the C# files of a folder and reports each
 
 "Insecure code patterns" is broad, and SonarQube already covers code quality at Blacklight. The rule set is therefore kept small and aimed at security: four patterns that can lead to a real attack, and one common habit that hides failures. Every rule is a lookup of names in the parsed code, with no tracing of values through it, so each can be built and reviewed on its own in the time left.
 
-ADR-018 lists candidate rules and says the rule set must be confirmed with the technical manager. This document sets the final list, and ADR-018 is amended to match (#55). *Code Repo Analysis Dashboard, Spike Findings & ADRs v2* is not available, as noted in the Issue 3 design, so this document is the source for the rules. Each choice is recorded below.
+ADR-018 lists candidate rules and says the rule set must be confirmed with the technical manager. This document sets the final list, and ADR-018 is amended to match (#55). The technical manager confirmed the six rules on 2026-09-29 as the set to start with. *Code Repo Analysis Dashboard, Spike Findings & ADRs v2* is not available, as noted in the Issue 3 design, so this document is the source for the rules. Each choice is recorded below.
 
 ## Success criteria
 
@@ -291,7 +291,7 @@ Each rule is written test first: a failing test, then the code that makes it pas
 One task at a time, stopping after each for review, then a commit whose message starts "This commit" and ends in its task number (ADR-020):
 
 1. **#48** This design document.
-2. **#55** The ADR-018 amendment with the final rule set, to be confirmed with the technical manager while the rules are built.
+2. **#55** The ADR-018 amendment with the final rule set, confirmed with the technical manager on 2026-09-29.
 3. **#49** The package, `ICodePatternRule`, `CodePatternMatch`, `CodePatternScanner`, `SnippetHash`, the helpers, the registration and the ADR-024 amendment.
 4. **#50** `CP001`.
 5. **#51** `CP002`.
