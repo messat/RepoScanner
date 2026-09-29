@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using RepoScanner.Core.Scanning;
+using RepoScanner.Scanner.CodePatterns;
 using RepoScanner.Scanner.Local;
 using RepoScanner.Scanner.Secrets;
 using Serilog.Extensions.Logging;
@@ -116,6 +117,18 @@ namespace RepoScanner.Scanner.Tests
                     Assert.That(ruleIds, Is.EquivalentTo(new string[] { "SEC001", "SEC002", "SEC003", "SEC004", "SEC005", "SEC006", "SEC007" }));
                     Assert.That(host.Services.GetServices<IScanner>().OfType<SecretScanner>(), Has.Exactly(1).Items);
                 }
+            }
+        }
+
+        // The code-pattern rules, one more with each of #50 to #53
+        [Test]
+        public void CreateBuilder_RegistersTheCodePatternRules()
+        {
+            using (IHost host = Program.CreateBuilder(ValidArgs).Build())
+            {
+                IEnumerable<string> ruleIds = host.Services.GetServices<ICodePatternRule>().Select(rule => rule.RuleId);
+
+                Assert.That(ruleIds, Is.EquivalentTo(new string[] { "CP001" }));
             }
         }
 
