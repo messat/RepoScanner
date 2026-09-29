@@ -1,0 +1,8 @@
+The same code in a file that is not C#, so the code-pattern scanner does not read it:
+
+db.Users.FromSqlRaw("SELECT * FROM Users WHERE Name = '" + name + "'");
+BinaryFormatter formatter = new BinaryFormatter();
+handler.ServerCertificateCustomValidationCallback = (message, certificate, chain, errors) => true;
+MD5 md5 = MD5.Create();
+policy.AllowAnyOrigin();
+try { Save(); } catch { }

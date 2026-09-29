@@ -9,6 +9,7 @@ using RepoScanner.Core.Entities;
 using RepoScanner.Core.Enums;
 using RepoScanner.Data;
 using RepoScanner.Scanner.Secrets;
+using RepoScanner.Scanner.Tests.CodePatterns;
 using RepoScanner.Scanner.Tests.Packages;
 using RepoScanner.Scanner.Tests.Secrets;
 
@@ -81,8 +82,9 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
-        // Both scanners run (Issue 5, #46). The secrets fixture has no project files, so the package scanner
-        // succeeds with nothing to report and asks nuget.org nothing.
+        // All three scanners run (Issue 5, #46; Issue 6, #49). The secrets fixture has no project files, so the
+        // package scanner succeeds with nothing to report and asks nuget.org nothing. Its .cs files hold no
+        // insecure code patterns.
         [Test]
         public async Task Path_OnTheFixture_CompletesTheRunWithASucceededResultForEachScanner()
         {
@@ -93,16 +95,19 @@ namespace RepoScanner.Scanner.Tests.Local
                 ScanRun run = context.ScanRuns.Include(saved => saved.ScannerResults).Single();
                 ScannerResult secrets = run.ScannerResults.Single(result => result.ScannerType == ScannerType.Secret);
                 ScannerResult packages = run.ScannerResults.Single(result => result.ScannerType == ScannerType.Package);
+                ScannerResult codePatterns = run.ScannerResults.Single(result => result.ScannerType == ScannerType.CodePattern);
 
                 using (Assert.EnterMultipleScope())
                 {
                     Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Completed));
                     Assert.That(run.NewCount, Is.EqualTo(FixtureSecrets.All.Count));
-                    Assert.That(run.ScannerResults, Has.Count.EqualTo(2));
+                    Assert.That(run.ScannerResults, Has.Count.EqualTo(3));
                     Assert.That(secrets.Status, Is.EqualTo(ScannerStatus.Succeeded));
                     Assert.That(secrets.FindingCount, Is.EqualTo(FixtureSecrets.All.Count));
                     Assert.That(packages.Status, Is.EqualTo(ScannerStatus.Succeeded));
                     Assert.That(packages.FindingCount, Is.Zero);
+                    Assert.That(codePatterns.Status, Is.EqualTo(ScannerStatus.Succeeded));
+                    Assert.That(codePatterns.FindingCount, Is.Zero);
                     Assert.That(_nuGet.Requests, Is.Empty);
                     Assert.That(context.Repositories.Single().ProjectName, Is.EqualTo("Local"));
                 }
@@ -322,6 +327,37 @@ namespace RepoScanner.Scanner.Tests.Local
                         Is.All.EqualTo(FindingStatus.Open));
                     Assert.That(context.Findings.Count(finding => finding.ScannerType == ScannerType.Package), Is.EqualTo(FixturePackages.All.Count));
                     Assert.That(output, Does.Contain("partially completed"));
+                }
+            }
+        }
+
+        // Issue 6 criterion 2, through the whole program (#54): exactly the planted patterns saved to SQL, and nothing
+        // from the secret or package scanners. A second run adds nothing, because each finding keeps its
+        // fingerprint (ADR-024), including the two empty catches of one file.
+        [Test]
+        public async Task Path_OnThePatternsFixture_SavesExactlyThePlantedPatternsOnce()
+        {
+            (int exitCode, _) = await RunAsync("--path", FixturePatterns.FolderPath);
+            (int secondExitCode, _) = await RunAsync("--path", FixturePatterns.FolderPath);
+
+            List<Finding> findings = SavedFindings();
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                List<ScanRun> runs = context.ScanRuns.Include(saved => saved.ScannerResults).OrderBy(saved => saved.Id).ToList();
+                ScannerResult codePatterns = runs[0].ScannerResults.Single(result => result.ScannerType == ScannerType.CodePattern);
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(exitCode, Is.EqualTo(0));
+                    Assert.That(secondExitCode, Is.EqualTo(0));
+                    Assert.That(findings.Select(finding => (finding.RuleId, finding.FilePath, finding.LineNumber)),
+                        Is.EqualTo(FixturePatterns.All.Select(pattern => (pattern.RuleId, pattern.FilePath, (int?)pattern.LineNumber))));
+                    Assert.That(findings.Select(finding => finding.ScannerType), Is.All.EqualTo(ScannerType.CodePattern));
+                    Assert.That(findings.Select(finding => finding.Status), Is.All.EqualTo(FindingStatus.Open));
+                    Assert.That(runs.Select(run => run.Status), Is.All.EqualTo(ScanRunStatus.Completed));
+                    Assert.That(codePatterns.FindingCount, Is.EqualTo(FixturePatterns.All.Count));
+                    Assert.That(runs.Select(run => run.NewCount), Is.EqualTo(new int[] { FixturePatterns.All.Count, 0 }));
+                    Assert.That(_nuGet.Requests, Is.Empty);
                 }
             }
         }
