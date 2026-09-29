@@ -13,13 +13,24 @@ namespace RepoScanner.Scanner.Tests.CodePatterns
         // in real code
         public static IReadOnlyList<string> InMethod(ICodePatternRule rule, string statements)
         {
-            return In(rule, "class Repository { async void Run() { " + statements + " } }");
+            return FoundInMethod(rule, statements).Select(match => match.Node.ToString()).ToList();
         }
 
         public static IReadOnlyList<string> In(ICodePatternRule rule, string code)
         {
+            return FoundIn(rule, code).Select(match => match.Node.ToString()).ToList();
+        }
+
+        // The matches themselves, for a rule whose message depends on what it found
+        public static IReadOnlyList<CodePatternMatch> FoundInMethod(ICodePatternRule rule, string statements)
+        {
+            return FoundIn(rule, "class Repository { async void Run() { " + statements + " } }");
+        }
+
+        public static IReadOnlyList<CodePatternMatch> FoundIn(ICodePatternRule rule, string code)
+        {
             SyntaxNode root = CSharpSyntaxTree.ParseText(code).GetRoot();
-            return rule.FindMatches(root).Select(match => match.Node.ToString()).ToList();
+            return rule.FindMatches(root);
         }
     }
 }

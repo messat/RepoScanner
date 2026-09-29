@@ -128,7 +128,7 @@ namespace RepoScanner.Scanner.Tests
             {
                 IEnumerable<string> ruleIds = host.Services.GetServices<ICodePatternRule>().Select(rule => rule.RuleId);
 
-                Assert.That(ruleIds, Is.EquivalentTo(new string[] { "CP001" }));
+                Assert.That(ruleIds, Is.EquivalentTo(new string[] { "CP001", "CP002" }));
             }
         }
 

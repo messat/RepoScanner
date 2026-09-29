@@ -192,7 +192,7 @@ A finding cites only the Microsoft reference (decision 5). In the messages below
 | `new ObjectStateFormatter(...)` | CA2315 |
 | `TypeNameHandling.Objects`, `.Arrays`, `.All` or `.Auto`, wherever it is written: in `JsonSerializerSettings` or in an attribute | CA2326 |
 
-**Does not flag:** `TypeNameHandling.None`, `System.Text.Json`, `DataContractSerializer`, and `SoapFormatter` (decision 13).
+**Does not flag:** `TypeNameHandling.None`; reading the setting, such as `settings.TypeNameHandling.ToString()`, since only the four values above match; `System.Text.Json`, `DataContractSerializer`, and `SoapFormatter` (decision 13).
 
 **Messages:**
 
@@ -278,7 +278,7 @@ Each rule is written test first: a failing test, then the code that makes it pas
 |---|---|
 | #49 | `SnippetHash`: the same code with other spacing, line breaks or comments gives the same hash; moving it down the file gives the same hash; the same code in another method or type gives a different one; nested types, a constructor, a property accessor, a lambda, a field and top-level statements give the parts in the table. `NestingDepth`: parentheses and angle brackets counted together, angle brackets starting again at `;`, `{` and `}`, stray closing brackets ignored. Scanner, with a stub rule: only `.cs` files, ignoring case; an unreadable file skipped and counted; a file nested 201 deep skipped and one nested 200 deep scanned; 100,000 nested parentheses skipped without crashing (without the limit, this test ends the test run with a stack overflow); a file the parser gives up on (CS8078) skipped with a warning; a file that throws `InsufficientExecutionStackException` skipped with a warning while the next is scanned; code that does not compile still scanned; code under `#if DEBUG` left out; line numbers from 1; the sort order; the summary line; `FingerprintCalculator` accepts every finding; the host resolves all three scanners |
 | #50 | Each flagged form and each "does not flag" case under CP001, including the object initialiser and brackets around the SQL; 20,000 literals joined in one `FromSqlRaw` scanned without crashing, because the check for a join of literals loops rather than calling itself; the host registers the rule |
-| #51 | Each row of the CP002 table, `TypeNameHandling.None`, a fully qualified type name, and the reference in each message |
+| #51 | Each row of the CP002 table, in settings and in an attribute; `TypeNameHandling.None` and reading the setting; a fully qualified type name; the reference in each message; the host registers the rule |
 | #52 | Both lambda forms, `+=`, `DangerousAcceptAnyServerCertificateValidator`, a callback with a check, and a named method |
 | #53 | Each row of the CP004 table and SHA256; `AllowAnyOrigin`, `SetIsOriginAllowed` with and without a check, `WithOrigins`; an empty catch with a type, without one and with a filter; a comment inside; `throw;` |
 | #54 | The whole scanner over the fixture gives exactly the findings in `FixturePatterns` (criterion 2); nothing from `Quiet/`; every rule appears at least once. The `--path` end-to-end test sees three `ScannerResult` rows |
@@ -315,7 +315,7 @@ One task at a time, stopping after each for review, then a commit whose message 
 
 - Rules look at the shape of the code, not at what it means (ADR-018). A pattern behind a variable or a helper method is missed: SQL built in one line and passed to `FromSqlRaw` in the next, or a certificate callback set to a named method.
 - Names are matched as written, without knowing their types. A class of the repository's own called `MD5` or `SqlCommand` is treated like the real one, and a `"SELECT " + SomeConstant` is flagged although the constant is safe. Such a finding is suppressed with a reason.
-- `new SqlCommand(sql)` written as `new(sql)` is not seen, because the rule cannot tell which type `new()` makes.
+- `new SqlCommand(sql)` or `new BinaryFormatter()` written as `new(sql)` or `new()` is not seen, because a rule cannot tell which type `new()` makes.
 - Files are parsed with no preprocessor symbols, so code inside `#if DEBUG` or another condition that a plain build leaves out is not scanned.
 - A file that nests parentheses and angle brackets more than 200 deep is not scanned at all, and nor is one the parser gives up on. The count includes brackets in comments and strings, so a file with that many in a comment is skipped too. Each is logged as a warning.
 - `.razor` and `.cshtml` files are not scanned; their `.razor.cs` code-behind files are.
