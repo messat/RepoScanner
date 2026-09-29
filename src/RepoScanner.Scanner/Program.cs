@@ -185,6 +185,7 @@ namespace RepoScanner.Scanner
             // registered as ICodePatternRule (#50 to #53). Singletons: a rule makes a new walker for each file.
             builder.Services.AddSingleton<ICodePatternRule, Cp001SqlFromStringsRule>();
             builder.Services.AddSingleton<ICodePatternRule, Cp002InsecureDeserializationRule>();
+            builder.Services.AddSingleton<ICodePatternRule, Cp003CertificateValidationDisabledRule>();
             builder.Services.AddSingleton<IScanner, CodePatternScanner>();
 
             if (LocalPathArgument.TryGet(args, out _))

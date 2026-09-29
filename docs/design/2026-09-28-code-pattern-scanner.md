@@ -203,10 +203,10 @@ A finding cites only the Microsoft reference (decision 5). In the messages below
 
 **Flags:**
 
-- An assignment, `=` or `+=`, to `ServerCertificateCustomValidationCallback`, `ServerCertificateValidationCallback` or `RemoteCertificateValidationCallback` whose value always returns true (`SyntaxNames.AlwaysReturnsTrue`): `(message, certificate, chain, errors) => true`, `delegate { return true; }`
+- An assignment, `=` or `+=`, to `ServerCertificateCustomValidationCallback`, `ServerCertificateValidationCallback` or `RemoteCertificateValidationCallback` whose value always returns true (`SyntaxNames.AlwaysReturnsTrue`): `(message, certificate, chain, errors) => true`, `delegate { return true; }`, or either wrapped in a delegate's constructor, as older .NET Framework code writes it: `new RemoteCertificateValidationCallback(delegate { return true; })`
 - Any use of `DangerousAcceptAnyServerCertificateValidator`
 
-**Does not flag:** a callback that checks something, such as `errors == SslPolicyErrors.None`; a callback set to a named method, whose body the rule cannot see.
+**Does not flag:** a callback that checks something, such as `errors == SslPolicyErrors.None`; a callback set to a named method, directly or through `new RemoteCertificateValidationCallback(ValidateCertificate)`, whose body the rule cannot see; a callback passed straight to a constructor, such as `new SslStream(stream, false, (a, b, c, d) => true)`, since only assignments are checked.
 
 **Message:** `Certificate validation is switched off, so traffic can be read or changed in transit. Remove the callback, or check the certificate in it (CA5359: <link>)`
 
@@ -279,7 +279,7 @@ Each rule is written test first: a failing test, then the code that makes it pas
 | #49 | `SnippetHash`: the same code with other spacing, line breaks or comments gives the same hash; moving it down the file gives the same hash; the same code in another method or type gives a different one; nested types, a constructor, a property accessor, a lambda, a field and top-level statements give the parts in the table. `NestingDepth`: parentheses and angle brackets counted together, angle brackets starting again at `;`, `{` and `}`, stray closing brackets ignored. Scanner, with a stub rule: only `.cs` files, ignoring case; an unreadable file skipped and counted; a file nested 201 deep skipped and one nested 200 deep scanned; 100,000 nested parentheses skipped without crashing (without the limit, this test ends the test run with a stack overflow); a file the parser gives up on (CS8078) skipped with a warning; a file that throws `InsufficientExecutionStackException` skipped with a warning while the next is scanned; code that does not compile still scanned; code under `#if DEBUG` left out; line numbers from 1; the sort order; the summary line; `FingerprintCalculator` accepts every finding; the host resolves all three scanners |
 | #50 | Each flagged form and each "does not flag" case under CP001, including the object initialiser and brackets around the SQL; 20,000 literals joined in one `FromSqlRaw` scanned without crashing, because the check for a join of literals loops rather than calling itself; the host registers the rule |
 | #51 | Each row of the CP002 table, in settings and in an attribute; `TypeNameHandling.None` and reading the setting; a fully qualified type name; the reference in each message; the host registers the rule |
-| #52 | Both lambda forms, `+=`, `DangerousAcceptAnyServerCertificateValidator`, a callback with a check, and a named method |
+| #52 | Each callback set with `=` and `+=`, in code and in an object initialiser; both lambda forms, an anonymous method, and one wrapped in `new RemoteCertificateValidationCallback(...)`; `DangerousAcceptAnyServerCertificateValidator` assigned and on its own; a callback with a check, a named method, `null`, and a lambda set on a property that is not a certificate callback; the host registers the rule |
 | #53 | Each row of the CP004 table and SHA256; `AllowAnyOrigin`, `SetIsOriginAllowed` with and without a check, `WithOrigins`; an empty catch with a type, without one and with a filter; a comment inside; `throw;` |
 | #54 | The whole scanner over the fixture gives exactly the findings in `FixturePatterns` (criterion 2); nothing from `Quiet/`; every rule appears at least once. The `--path` end-to-end test sees three `ScannerResult` rows |
 
@@ -315,6 +315,7 @@ One task at a time, stopping after each for review, then a commit whose message 
 
 - Rules look at the shape of the code, not at what it means (ADR-018). A pattern behind a variable or a helper method is missed: SQL built in one line and passed to `FromSqlRaw` in the next, or a certificate callback set to a named method.
 - Names are matched as written, without knowing their types. A class of the repository's own called `MD5` or `SqlCommand` is treated like the real one, and a `"SELECT " + SomeConstant` is flagged although the constant is safe. Such a finding is suppressed with a reason.
+- A certificate callback passed straight to a constructor, such as `new SslStream(stream, false, (a, b, c, d) => true)`, is not seen: `CP003` checks assignments only.
 - `new SqlCommand(sql)` or `new BinaryFormatter()` written as `new(sql)` or `new()` is not seen, because a rule cannot tell which type `new()` makes.
 - Files are parsed with no preprocessor symbols, so code inside `#if DEBUG` or another condition that a plain build leaves out is not scanned.
 - A file that nests parentheses and angle brackets more than 200 deep is not scanned at all, and nor is one the parser gives up on. The count includes brackets in comments and strings, so a file with that many in a comment is skipped too. Each is logged as a warning.
