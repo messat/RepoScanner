@@ -18,6 +18,8 @@
     <PackageReference Include="NuGet.Versioning" />
     <!-- IHttpClientFactory and the standard retry and timeout handler for nuget.org (#44) -->
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <!-- Roslyn: parses C# into a syntax tree for the code-pattern rules to walk (#49, ADR-018) -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
 
   <!-- Lets the test project call internal members, such as Program.RunAsync -->

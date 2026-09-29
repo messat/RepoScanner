@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Testing;
 using NUnit.Framework;
 using RepoScanner.Core.Enums;
 using RepoScanner.Core.Scanning;
+using RepoScanner.Scanner.CodePatterns;
 using RepoScanner.Scanner.Files;
 using RepoScanner.Scanner.Packages;
 using RepoScanner.Scanner.Reconciliation;
@@ -269,7 +270,8 @@ namespace RepoScanner.Scanner.Tests.Packages
             await Assert.ThatAsync(() => _scanner.ScanAsync(_folder.FullPath, CancellationToken.None), Throws.InstanceOf<NuGetUnavailableException>());
         }
 
-        // Local mode runs every registered scanner, secrets first (Issue 5 design, Wiring)
+        // Local mode runs every registered scanner, secrets first (Issue 5 design, Wiring), and code patterns
+        // last (Issue 6 design, #49)
         [Test]
         public void CreateBuilder_RegistersThePackageScannerAfterTheSecretScanner()
         {
@@ -279,7 +281,8 @@ namespace RepoScanner.Scanner.Tests.Packages
             {
                 IEnumerable<IScanner> scanners = host.Services.GetServices<IScanner>();
 
-                Assert.That(scanners.Select(scanner => scanner.GetType()), Is.EqualTo(new[] { typeof(SecretScanner), typeof(PackageScanner) }));
+                Assert.That(scanners.Select(scanner => scanner.GetType()),
+                    Is.EqualTo(new[] { typeof(SecretScanner), typeof(PackageScanner), typeof(CodePatternScanner) }));
             }
         }
 

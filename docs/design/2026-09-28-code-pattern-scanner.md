@@ -4,6 +4,7 @@
 - **Date:** 2026-09-28
 - **Work item:** Issue 6, #48 (tasks #49 to #55)
 - **Branch:** `feature/48-code-pattern-scanner`
+- **Amended:** 2026-09-29, with #49: decision 17, after a probe showed Roslyn's parser can overflow the stack on deeply nested code, and the rules no longer run in a set order
 
 ## Purpose
 
@@ -40,7 +41,7 @@ From Issue 6 (#48):
 | 14 | An empty `catch` holding a comment | Not a finding | The comment records a deliberate choice, such as `// the file may already be gone` |
 | 15 | What identifies a finding | The hash of the containing type, the containing member and the matched code's tokens. ADR-024 is amended with the recipe (#49) | Spacing and comments do not change it, lines moving do not change it, and two empty `catch` blocks in different methods stay two findings |
 | 16 | The same match twice in one member | One finding | As for a secret (ADR-024). Rare outside `CP006` |
-| 17 | A file too deeply nested to walk | Skipped with a warning; the other files are scanned | Roslyn throws `InsufficientExecutionStackException` rather than overflowing the stack, for example on a string joined 10,000 times |
+| 17 | A file too deeply nested to scan | Not parsed when its parentheses and angle brackets nest more than 200 deep (`NestingDepth`); skipped when the parser stops with error CS8078 or a walker throws `InsufficientExecutionStackException`. Each is skipped with a warning; the other files are scanned | A probe on 2026-09-29 with Roslyn 5.9.0 found three behaviours on code nested a few thousand deep. A long `+` or `a.b.c` chain throws `InsufficientExecutionStackException`. Deep blocks, `!` or ternaries make the parser stop with CS8078 and an empty tree. Deep `(` or `<` overflow the stack in the parser, from about 1,500, which ends the whole process and cannot be caught. 200 is about seven times below that, and far deeper than code written by hand |
 | 18 | The Roslyn package | `Microsoft.CodeAnalysis.CSharp` **5.9.0**, the latest stable version on 2026-09-28, in `RepoScanner.Scanner` only | The syntax tree and walker come from it. Core stays free of packages |
 | 19 | A settings group for the scanner | None | ADR-022 adds a group only when something reads it |
 | 20 | New ADRs | None. ADR-018 and ADR-024 are amended | The decisions stand; only the rule list and the hash recipe are made exact |
@@ -51,7 +52,7 @@ From Issue 6 (#48):
 ```
 src/RepoScanner.Scanner/                 + Microsoft.CodeAnalysis.CSharp
   CodePatterns/    ICodePatternRule, CodePatternMatch, CodePatternScanner,
-                   SnippetHash, SyntaxNames, RuleReference                    #49
+                   SnippetHash, NestingDepth, SyntaxNames, RuleReference      #49
                    Rules/  Cp001SqlFromStringsRule                            #50
                            Cp002InsecureDeserializationRule                   #51
                            Cp003CertificateValidationDisabledRule             #52
@@ -102,8 +103,8 @@ namespace RepoScanner.Scanner.CodePatterns
 
 1. List the files with `RepositoryFileWalker` and keep those ending in `.cs` (decision 7).
 2. Read each with `TryReadTextAsync`. A file that cannot be read is skipped and counted, as in the secret scanner.
-3. Parse it (decision 9). Broken C# still gives a tree, so the rules run on whatever parsed; there is no special handling.
-4. Run every rule, in rule ID order. An `InsufficientExecutionStackException` skips the rest of that file with a warning naming it (decision 17). Any other exception is a bug in a rule: it fails the scanner, and the run carries on without it (Issue 5 design, Failed scanners).
+3. Skip it, with a warning naming it, when `NestingDepth.Deepest` is over `MaxNestingDepth` (200). Otherwise parse it (decision 9), and skip it the same way when the parser stopped with CS8078 (decision 17). Broken C# still gives a tree, so the rules run on whatever parsed; there is no other special handling.
+4. Run every rule. The order does not matter, because the findings are sorted. An `InsufficientExecutionStackException` skips the whole file with the same warning, including what an earlier rule found in it (decision 17). Any other exception is a bug in a rule: it fails the scanner, and the run carries on without it (Issue 5 design, Failed scanners).
 5. Build one `RawFinding` per match:
 
 | Property | Value |
@@ -275,7 +276,7 @@ Each rule is written test first: a failing test, then the code that makes it pas
 
 | Task | Tests |
 |---|---|
-| #49 | `SnippetHash`: the same code with other spacing, line breaks or comments gives the same hash; moving it down the file gives the same hash; the same code in another method or type gives a different one; nested types, a constructor, a property accessor, a lambda, a field and top-level statements give the parts in the table. Scanner, with a stub rule: only `.cs` files, ignoring case; an unreadable file skipped and counted; a file that throws `InsufficientExecutionStackException` skipped with a warning while the next is scanned; line numbers from 1; the sort order; the summary line; `FingerprintCalculator` accepts every finding; the host resolves all three scanners |
+| #49 | `SnippetHash`: the same code with other spacing, line breaks or comments gives the same hash; moving it down the file gives the same hash; the same code in another method or type gives a different one; nested types, a constructor, a property accessor, a lambda, a field and top-level statements give the parts in the table. `NestingDepth`: parentheses and angle brackets counted together, angle brackets starting again at `;`, `{` and `}`, stray closing brackets ignored. Scanner, with a stub rule: only `.cs` files, ignoring case; an unreadable file skipped and counted; a file nested 201 deep skipped and one nested 200 deep scanned; 100,000 nested parentheses skipped without crashing (without the limit, this test ends the test run with a stack overflow); a file the parser gives up on (CS8078) skipped with a warning; a file that throws `InsufficientExecutionStackException` skipped with a warning while the next is scanned; code that does not compile still scanned; code under `#if DEBUG` left out; line numbers from 1; the sort order; the summary line; `FingerprintCalculator` accepts every finding; the host resolves all three scanners |
 | #50 | Each flagged form and each "does not flag" case under CP001, including the object initialiser and brackets around the SQL |
 | #51 | Each row of the CP002 table, `TypeNameHandling.None`, a fully qualified type name, and the reference in each message |
 | #52 | Both lambda forms, `+=`, `DangerousAcceptAnyServerCertificateValidator`, a callback with a check, and a named method |
@@ -316,6 +317,7 @@ One task at a time, stopping after each for review, then a commit whose message 
 - Names are matched as written, without knowing their types. A class of the repository's own called `MD5` or `SqlCommand` is treated like the real one, and a `"SELECT " + SomeConstant` is flagged although the constant is safe. Such a finding is suppressed with a reason.
 - `new SqlCommand(sql)` written as `new(sql)` is not seen, because the rule cannot tell which type `new()` makes.
 - Files are parsed with no preprocessor symbols, so code inside `#if DEBUG` or another condition that a plain build leaves out is not scanned.
+- A file that nests parentheses and angle brackets more than 200 deep is not scanned at all, and nor is one the parser gives up on. The count includes brackets in comments and strings, so a file with that many in a comment is skipped too. Each is logged as a warning.
 - `.razor` and `.cshtml` files are not scanned; their `.razor.cs` code-behind files are.
 - Weak hashing is flagged wherever it is used, including checksums, where it is harmless.
 - Renaming a method, type or file, or changing the matched code, makes its findings new, and suppressions do not follow (ADR-024).

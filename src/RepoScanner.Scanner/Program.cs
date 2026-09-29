@@ -10,6 +10,7 @@ using RepoScanner.Core.Persistence;
 using RepoScanner.Core.Scanning;
 using RepoScanner.Data;
 using RepoScanner.Data.Repositories;
+using RepoScanner.Scanner.CodePatterns;
 using RepoScanner.Scanner.Configuration;
 using RepoScanner.Scanner.Files;
 using RepoScanner.Scanner.Local;
@@ -178,6 +179,10 @@ namespace RepoScanner.Scanner
             builder.Services.AddSingleton<ProjectFileReader>();
             NuGetVulnerabilityIndexClient.Register(builder.Services);
             builder.Services.AddSingleton<IScanner, PackageScanner>();
+
+            // The code-pattern scanner (#49), registered last, so it runs third. Its rules, CP001 to CP006, are
+            // registered as ICodePatternRule (#50 to #53). Singletons: a rule makes a new walker for each file.
+            builder.Services.AddSingleton<IScanner, CodePatternScanner>();
 
             if (LocalPathArgument.TryGet(args, out _))
             {
