@@ -62,7 +62,8 @@ src/RepoScanner.Scanner/                 + Microsoft.CodeAnalysis.CSharp
 
 tests/fixtures/patterns-repo/            the fixture                          #54
 tests/RepoScanner.Scanner.Tests/
-  CodePatterns/    rule, hash, scanner and fixture tests, FixturePatterns
+  CodePatterns/    rule, hash, scanner, fixture and self-scan tests, FixturePatterns,
+                   AllCodePatternRules, PatternMatches
 
 docs/adr/ADR-018-code-pattern-rules-from-a-roslyn-syntax-walker-justified-by-analyser-ids.md  amended  #55
 docs/adr/ADR-024-fingerprint-per-scanner-without-line-numbers.md                             amended  #49
@@ -281,7 +282,7 @@ Each rule is written test first: a failing test, then the code that makes it pas
 | #51 | Each row of the CP002 table, in settings and in an attribute; `TypeNameHandling.None` and reading the setting; a fully qualified type name; the reference in each message; the host registers the rule |
 | #52 | Each callback set with `=` and `+=`, in code and in an object initialiser; both lambda forms, an anonymous method, and one wrapped in `new RemoteCertificateValidationCallback(...)`; `DangerousAcceptAnyServerCertificateValidator` assigned and on its own; a callback with a check, a named method, `null`, and a lambda set on a property that is not a certificate callback; the host registers the rule |
 | #53 | Each row of the CP004 table, with the algorithm and analyser ID in each message, and the strong algorithms and lookalike names; `AllowAnyOrigin` alone, in a chain and in a lambda, `SetIsOriginAllowed` with and without a check and with a named method, `WithOrigins`; an empty catch with a type, without one, with a filter and over several lines; a comment inside, `throw;`, logging, and several catches of one try; the host registers all six rules |
-| #54 | The whole scanner over the fixture gives exactly the findings in `FixturePatterns` (criterion 2); nothing from `Quiet/`; every rule appears at least once. The `--path` end-to-end test sees three `ScannerResult` rows |
+| #54 | The whole scanner over the fixture gives exactly the findings in `FixturePatterns` (criterion 2), which leaves out `Quiet/` and every case next to a finding; every rule appears at least once; each finding has a snippet hash of its own. `--path` on the fixture saves exactly those findings, and a second run adds none. The scan of RepoScanner's own `src` and `tests` finds nothing, as the secret scanner's self-scan does. The `--path` test on the secrets fixture sees three `ScannerResult` rows (#49) |
 
 - The 80% line coverage gate on the Scanner project covers the new classes.
 - Manual check: run `--path` on the fixture and compare with `FixturePatterns`; then run it on a clone of a Blacklight repository and look through the findings for false alarms before the demo.

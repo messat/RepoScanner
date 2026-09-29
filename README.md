@@ -127,7 +127,7 @@ If `dotnet ef` says `Scanner__Database__ConnectionString` is not set, repeat ste
 
 ## Scan a local folder
 
-The scanner can scan a folder on your machine instead of reading the queue. It runs the secret scanner, then the package scanner, and saves the findings to the database in `Scanner:Database:ConnectionString`:
+The scanner can scan a folder on your machine instead of reading the queue. It runs the secret scanner, then the package scanner, then the code-pattern scanner, and saves the findings to the database in `Scanner:Database:ConnectionString`:
 
 ```bash
 dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/secrets-repo
@@ -137,16 +137,32 @@ dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/secrets-re
 dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/packages-repo
 ```
 
+```bash
+dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/patterns-repo
+```
+
 - The folder is saved in `Repositories` with the project name `Local`, and each scan as a row in `ScanRuns`, with one `ScannerResults` row per scanner.
 - Each secret finding has a masked preview and a SHA-256 hash of the secret. The secret itself is never saved or logged ([ADR-023](docs/adr/ADR-023-secret-hash-is-an-unsalted-sha-256.md)).
 - The package scanner reads the `.csproj` and `Directory.Packages.props` files, and reports each package version with a known vulnerability as a `PKG001` finding, with the advisory's severity and link. A floating version such as `12.0.*` is checked at the version a build would get. A version set centrally is reported once, on its `Directory.Packages.props` line ([Issue 5 design](docs/design/2026-09-27-nuget-vulnerability-scanner.md)).
 - It also reports each version nuget.org marks deprecated, whose author has stopped maintaining it, as a `PKG002` finding: High for critical bugs, Low for legacy or other reasons, with the package nuget.org suggests instead, if any, and the version's nuget.org page as its link.
 - The package scanner needs internet access to `api.nuget.org`: it downloads nuget.org's list of known vulnerabilities, and each package's metadata, once per run, and keeps them in memory only ([ADR-026](docs/adr/ADR-026-package-vulnerabilities-from-nuget-org-without-a-restore.md)). Nothing is written to the scanned folder.
 - Running the same folder again updates the findings already stored rather than adding them twice: each keeps its row, with its line and last-seen time updated. A finding no longer found is marked `Resolved`, one found again after that is reopened, and a suppressed one stays suppressed until its date passes. Each change is recorded in `FindingEvents`, and the counts in the run's `ScanRuns` row ([Issue 4 design](docs/design/2026-09-27-findings-reconciliation.md)).
+- The code-pattern scanner reads each `.cs` file with Roslyn, the C# compiler's parser, and reports six insecure patterns. Each finding's message says what to do instead and ends with the Microsoft guidance it follows ([ADR-018](docs/adr/ADR-018-code-pattern-rules-from-a-roslyn-syntax-walker-justified-by-analyser-ids.md), [Issue 6 design](docs/design/2026-09-28-code-pattern-scanner.md)):
+
+  | Rule | Reports | Severity | Reference |
+  |---|---|---|---|
+  | `CP001` | SQL built by joining strings, given to `FromSqlRaw`, `ExecuteSqlRaw`, `SqlQueryRaw`, `new SqlCommand` or `CommandText` | High | CA2100 |
+  | `CP002` | `BinaryFormatter`, `LosFormatter`, `NetDataContractSerializer`, `ObjectStateFormatter`, and Newtonsoft.Json's `TypeNameHandling` other than `None` | High | CA2300, CA2305, CA2310, CA2315, CA2326 |
+  | `CP003` | A certificate callback that accepts every certificate, and `DangerousAcceptAnyServerCertificateValidator` | High | CA5359 |
+  | `CP004` | MD5, DES and RC2; SHA1 and TripleDES | Medium | CA5351; CA5350 |
+  | `CP005` | `AllowAnyOrigin()`, and `SetIsOriginAllowed` with a check that allows every origin | Medium | Enable CORS page |
+  | `CP006` | A `catch` block with no statements and no comment | Low | related to CA1031 |
+
+- A code-pattern finding keeps its identity when code above it moves or the file is reformatted: its fingerprint comes from its class, method and code, not its line ([ADR-024](docs/adr/ADR-024-fingerprint-per-scanner-without-line-numbers.md)). The two empty catches in two methods of one file are two findings.
 - If one scanner fails, for example the package scanner because nuget.org cannot be reached, the other scanners carry on and their findings are saved. The run is then `PartiallyCompleted`: `ScanRuns.ErrorMessage` names the scanner that failed and why, and its `ScannerResults` row is `Failed`. A scanner that failed never resolves its own findings, so they keep their last status until it runs again ([ADR-025](docs/adr/ADR-025-auto-resolve-only-for-scanners-that-completed.md)). If every scanner fails, the run is `Failed`.
 - Folders named `.git`, `bin`, `obj`, `node_modules`, `packages`, `.vs` and `TestResults`, files over 1 MB, binary files, symbolic links and files that cannot be opened are skipped.
 - So is any folder below the scanned one that contains a `.reposcanner-exclude` file. RepoScanner's own test data has one, so its fake secrets and old packages are not reported when this repository is scanned.
-- `tests/fixtures/secrets-repo` and `tests/fixtures/packages-repo` are pretend repositories, for trying the scanners out: every secret in them is fake, and the packages are old versions on purpose.
+- `tests/fixtures/secrets-repo`, `tests/fixtures/packages-repo` and `tests/fixtures/patterns-repo` are pretend repositories, for trying the scanners out: every secret in them is fake, the packages are old versions on purpose, and the insecure code is on purpose too.
 
 ## Known limitations
 
@@ -163,6 +179,17 @@ The package scanner:
 - Checks deprecation for the exact version in use: nuget.org marks versions one by one, so a package whose author deprecated only older versions gives no `PKG002` for a newer one.
 - Names the alternative package nuget.org suggests, but does not check its version range, and does not store the author's own deprecation note; the version's nuget.org page shows it.
 - Reads deprecation from nuget.org only, so a package from a private feed is never reported as deprecated.
+
+The code-pattern scanner:
+
+- **Looks at the shape of the code, not what it means** ([ADR-018](docs/adr/ADR-018-code-pattern-rules-from-a-roslyn-syntax-walker-justified-by-analyser-ids.md)). A pattern behind a variable or a helper method is missed, such as SQL built on one line and passed to `FromSqlRaw` on the next, or a certificate callback set to a named method.
+- Matches names as written, without knowing their types: a class of the repository's own called `MD5` or `SqlCommand` is treated like the real one, and `"SELECT " + SomeConstant` is flagged although the constant is safe. Such a finding is suppressed with a reason.
+- Does not see a type created with `new(...)` without its name, or a certificate callback passed straight to a constructor, such as `new SslStream(stream, false, (a, b, c, d) => true)`.
+- Reads files as a plain build with no symbols defined, so code under `#if DEBUG` is not scanned.
+- Does not read `.razor` or `.cshtml` files; their `.razor.cs` code-behind files are read.
+- Reports weak hashing wherever it is used, including checksums, where it is harmless.
+- Skips, with a warning, a file whose parentheses and angle brackets nest more than 200 deep, and one the parser gives up on, because Roslyn's parser can crash the process on very deeply nested code.
+- Opens a new finding, and resolves the old one, when the method or class around it is renamed or its code changes; a suppression does not follow it ([ADR-024](docs/adr/ADR-024-fingerprint-per-scanner-without-line-numbers.md)).
 
 ## Exit codes
 
@@ -203,7 +230,7 @@ tests/
   RepoScanner.Core.Tests/     NUnit tests for Core
   RepoScanner.Data.Tests/     NUnit tests for Data
   RepoScanner.Scanner.Tests/  NUnit tests for Scanner
-  fixtures/                   pretend repositories for the scanners' tests (every secret in them is fake, every package old on purpose)
+  fixtures/                   pretend repositories for the scanners' tests (every secret in them is fake, every package old and every insecure pattern there on purpose)
 ```
 
 ## Conventions
