@@ -131,7 +131,7 @@ namespace RepoScanner.Scanner.Queue
 }
 ```
 
-The body is read with `System.Text.Json` and web defaults (field names ignoring case). A body that is not JSON, including one sent as Base64, a missing or empty field, a wrong type, an unknown `schemaVersion`, or a value breaking a rule above is malformed. `problem` names the first thing wrong, such as `repositoryName must not contain \ or /`, and is the reason in the "message poisoned" log line. It never includes the body.
+The body is read with `System.Text.Json`, matching field names ignoring case. A body that is not JSON, including one sent as Base64, a missing or empty field, a field sent twice (in any case), a wrong type, an unknown `schemaVersion`, or a value breaking a rule above is malformed. The characters `repositoryName` cannot hold are Windows' list, `< > : " | ? *` and control characters, written out in the code, because .NET's own list on Linux, where the container runs, allows them. `problem` names the first thing wrong, such as `repositoryName must not contain \ or /`, and is the reason in the "message poisoned" log line. It never includes the body.
 
 `repositoryName` is untrusted input: without the rule, `..\..\Windows` would point the scan at another folder. `LocalFolderSource` checks again that the folder it opens is directly inside `LocalRoot`.
 
