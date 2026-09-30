@@ -20,7 +20,7 @@ namespace RepoScanner.Scanner.Tests.Configuration
 
         private static readonly string[] QueueArgs =
         {
-            "--Scanner:Queue:Name", "scan-test",
+            "--Scanner:Queue:Name", "scan-nightly",
             "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true"
         };
 

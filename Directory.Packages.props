@@ -39,6 +39,13 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
   </ItemGroup>
 
+  <!-- Storage queues: the scan requests (Issue 7), read with a connection string locally and with the
+       job's managed identity in Azure (ADR-007) -->
+  <ItemGroup>
+    <PackageVersion Include="Azure.Storage.Queues" Version="12.27.1" />
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+  </ItemGroup>
+
   <!-- Testing -->
   <ItemGroup>
     <!-- In-memory SQLite database for the Data tests -->

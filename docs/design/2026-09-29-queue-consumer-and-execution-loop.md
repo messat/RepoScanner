@@ -279,7 +279,7 @@ Both log `Message {MessageId} moved to {PoisonQueueName}: {Reason}` with the rep
 | Setting | Default | `Development` | Rules |
 |---|---|---|---|
 | `Scanner:Queue:Name` | | `scan-nightly` | Now exactly `scan-nightly` or `scan-ondemand` (decision 5) |
-| `Scanner:Queue:PoisonMessageTimeToLiveDays` | `30` | | 1 or more |
+| `Scanner:Queue:PoisonMessageTimeToLiveDays` | `30` | | 1 to 365, well inside the longest expiry Azure accepts |
 | `Scanner:Execution:MaxRunDurationMinutes` | `50` | | 1 to 1440 |
 | `Scanner:Execution:ScanTimeoutPerRepoMinutes` | `15` | | 1 or more, and no more than `MaxRunDurationMinutes` |
 | `Scanner:Execution:VisibilityTimeoutMinutes` | `65` | `1` | 1 to 10080 (Azure's limit of 7 days) |

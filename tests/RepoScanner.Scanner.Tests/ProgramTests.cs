@@ -23,7 +23,7 @@ namespace RepoScanner.Scanner.Tests
         // Nothing connects to the database in queue mode, so its connection string only has to be present.
         private static readonly string[] ValidArgs =
         {
-            "--Scanner:Queue:Name", "scan-test",
+            "--Scanner:Queue:Name", "scan-nightly",
             "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
             "--Scanner:Database:ConnectionString", "Server=unused;Database=unused"
         };

@@ -18,7 +18,7 @@ ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADR
 | [ADR-010](ADR-010-deliberate-rejection-of-complexity.md) | Deliberate rejection of complexity | Accepted |
 | [ADR-011](ADR-011-two-job-definitions-two-queues.md) | Two job definitions, two queues | Accepted, amended 2026-09-24 |
 | [ADR-012](ADR-012-maxexecutions-1-raised-on-evidence.md) | maxExecutions 1, raised on evidence | Accepted |
-| [ADR-013](ADR-013-delete-after-upsert-poison-queue-after-three-failures.md) | Delete after upsert, poison queue after three failures | Accepted |
+| [ADR-013](ADR-013-delete-after-upsert-poison-queue-after-three-failures.md) | Delete after upsert, poison queue after three failures | Accepted, amended 2026-09-30 |
 | [ADR-014](ADR-014-two-runtime-identities.md) | Two runtime identities | Accepted |
 | [ADR-015](ADR-015-azure-sql-basic-in-uk-west.md) | Azure SQL Basic in UK West | Accepted |
 | [ADR-016](ADR-016-shallow-single-branch-clone-with-the-credential-in-a-header.md) | Shallow, single-branch clone with the credential in a header | Accepted |
