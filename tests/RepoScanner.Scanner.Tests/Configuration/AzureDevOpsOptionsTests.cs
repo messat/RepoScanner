@@ -66,6 +66,37 @@ namespace RepoScanner.Scanner.Tests.Configuration
             }
         }
 
+        // ADR-016's eight-minute cap on the clone (#40)
+        [Test]
+        public void CloneTimeoutMinutes_DefaultsToEight()
+        {
+            Assert.That(new AzureDevOpsOptions().CloneTimeoutMinutes, Is.EqualTo(8));
+        }
+
+        [TestCase(0)]
+        [TestCase(1441)]
+        public void Validate_CloneTimeoutOutsideOneTo1440_Fails(int minutes)
+        {
+            ValidateOptionsResult result = _validator.Validate(
+                null, new AzureDevOpsOptions { OrganizationUrl = "https://dev.azure.com/BlacklightInternalsMo", Pat = Pat, CloneTimeoutMinutes = minutes });
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result.Failed, Is.True);
+                Assert.That(result.FailureMessage, Does.Contain(nameof(AzureDevOpsOptions.CloneTimeoutMinutes)));
+            }
+        }
+
+        [TestCase(1)]
+        [TestCase(1440)]
+        public void Validate_CloneTimeoutInsideOneTo1440_Succeeds(int minutes)
+        {
+            ValidateOptionsResult result = _validator.Validate(
+                null, new AzureDevOpsOptions { OrganizationUrl = "https://dev.azure.com/BlacklightInternalsMo", Pat = Pat, CloneTimeoutMinutes = minutes });
+
+            Assert.That(result.Succeeded, Is.True, result.FailureMessage);
+        }
+
         // A C# record's ToString prints every property, so a settings object in a log line would print the PAT
         [Test]
         public void ToString_HidesThePat()

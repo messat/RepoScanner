@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 using RepoScanner.Scanner.Configuration;
 using RepoScanner.Scanner.Git;
@@ -31,9 +32,13 @@ namespace RepoScanner.Scanner.Tests.Sources
         private WorkspaceFolders _folders = null!;
         private FakeLogger<AzureDevOpsCloneSource> _logger = null!;
 
+        // The clone's time limit runs on this clock, so a test can move it 8 minutes on instead of waiting
+        private FakeTimeProvider _time = null!;
+
         [SetUp]
         public void SetUp()
         {
+            _time = new FakeTimeProvider();
             _repos = new TempFolder();
             _temp = new TempFolder();
             _folders = new WorkspaceFolders(Path.Combine(_temp.FullPath, "reposcanner"), NullLogger<WorkspaceFolders>.Instance);
@@ -204,6 +209,27 @@ namespace RepoScanner.Scanner.Tests.Sources
             }
         }
 
+        // #40, ADR-016's eight-minute cap: a server that never answers cannot hold the clone longer, and the scan run's
+        // error names the setting to change
+        [Test]
+        public async Task OpenAsync_WhenTheCloneTakesLongerThanTheLimit_SaysSoAndLeavesNoFolder()
+        {
+            using (FakeAzureDevOps server = FakeAzureDevOps.StartStalling())
+            {
+                Task<RepositoryWorkspace> opening = Source(server.OrganizationUrl).OpenAsync(Request("Kudos Wall", "victim-repo", "main"), CancellationToken.None);
+                await server.FirstRequest.WaitAsync(TimeSpan.FromSeconds(30));
+
+                _time.Advance(TimeSpan.FromMinutes(8));
+
+                TimeoutException exception = Assert.ThrowsAsync<TimeoutException>(() => opening);
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(exception.Message, Is.EqualTo("The clone took longer than 8 minutes and was stopped (Scanner:AzureDevOps:CloneTimeoutMinutes)"));
+                    Assert.That(Directory.EnumerateFileSystemEntries(_folders.Root), Is.Empty);
+                }
+            }
+        }
+
         // Review Focus 2: a Windows user name such as "Jo Smith" puts a space in %TEMP%
         [Test]
         public async Task OpenAsync_WithASpaceInTheWorkspacePath_Clones()
@@ -323,7 +349,7 @@ namespace RepoScanner.Scanner.Tests.Sources
         {
             return new AzureDevOpsCloneSource(
                 Options.Create(new AzureDevOpsOptions { OrganizationUrl = organizationUrl, Pat = Pat }),
-                new GitProcess(new FakeLogger<GitProcess>()),
+                new GitProcess(_time, new FakeLogger<GitProcess>()),
                 _folders,
                 _logger);
         }

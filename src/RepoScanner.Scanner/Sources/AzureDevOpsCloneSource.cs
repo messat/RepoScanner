@@ -21,6 +21,9 @@ namespace RepoScanner.Scanner.Sources
         // A SHA-1 commit ID in hexadecimal
         private const int CommitIdLength = 40;
 
+        // Reading the commit ID touches only the clone on disk: a minute is far more than it ever takes
+        private static readonly TimeSpan RevParseTimeLimit = TimeSpan.FromMinutes(1);
+
         // What git prints when Azure DevOps refuses the PAT. With prompts and sign-in helpers off it cannot ask for
         // another login, so it says "terminal prompts disabled" (checked against Azure DevOps on 2026-10-01); the others
         // are its other wordings for the same refusal.
@@ -55,7 +58,7 @@ namespace RepoScanner.Scanner.Sources
                 await CloneAsync(url, request.DefaultBranch, folder, cancellationToken);
 
                 // Which commit was scanned, saved as ScanRun.CommitSha (#38)
-                string commitSha = ParseCommitId(await _git.RunAsync(GitCommand.RevParseHead(folder), cancellationToken));
+                string commitSha = ParseCommitId(await _git.RunAsync(GitCommand.RevParseHead(folder), RevParseTimeLimit, cancellationToken));
 
                 // ADR-016 asks for the free space before and after: the replica's disk is about 2 GiB
                 _logger.LogInformation(
@@ -101,7 +104,14 @@ namespace RepoScanner.Scanner.Sources
         {
             try
             {
-                await _git.RunAsync(GitCommand.Clone(url, branch, folder, _options.Pat), cancellationToken);
+                await _git.RunAsync(GitCommand.Clone(url, branch, folder, _options.Pat), TimeSpan.FromMinutes(_options.CloneTimeoutMinutes), cancellationToken);
+            }
+            catch (TimeoutException exception)
+            {
+                // ADR-016's cap (#40): the scan run's error names the setting, and the message is retried
+                throw new TimeoutException(
+                    "The clone took longer than " + _options.CloneTimeoutMinutes + " minutes and was stopped (Scanner:AzureDevOps:CloneTimeoutMinutes)",
+                    exception);
             }
             catch (GitCommandException exception) when (IsRejectedToken(exception.StandardError))
             {

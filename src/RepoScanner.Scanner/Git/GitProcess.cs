@@ -20,20 +20,26 @@ namespace RepoScanner.Scanner.Git
         // After git is stopped, how long to wait for what it printed before letting go of it
         private static readonly TimeSpan OutputAfterStopping = TimeSpan.FromSeconds(5);
 
+        // The clock behind the time limit, so tests can move it forward instead of waiting
+        private readonly TimeProvider _timeProvider;
         private readonly ILogger<GitProcess> _logger;
 
-        public GitProcess(ILogger<GitProcess> logger)
+        public GitProcess(TimeProvider timeProvider, ILogger<GitProcess> logger)
         {
+            _timeProvider = timeProvider;
             _logger = logger;
         }
 
         // Returns what git printed to standard output. A non-zero exit throws GitCommandException with git's last
-        // lines, every secret replaced by ***. Cancelling stops git and its child processes and throws
-        // OperationCanceledException.
-        public async Task<string> RunAsync(GitCommand command, CancellationToken cancellationToken)
+        // lines, every secret replaced by ***. Going past timeLimit (#40) stops git and its child processes and throws
+        // TimeoutException; cancelling stops them and throws OperationCanceledException.
+        public async Task<string> RunAsync(GitCommand command, TimeSpan timeLimit, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // Started before git is, so the limit counts from the moment git could start working
+            using (CancellationTokenSource limit = new CancellationTokenSource(timeLimit, _timeProvider))
+            using (CancellationTokenSource stopping = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, limit.Token))
             using (Process process = new Process { StartInfo = CreateStartInfo(command) })
             {
                 process.Start();
@@ -47,12 +53,19 @@ namespace RepoScanner.Scanner.Git
 
                 try
                 {
-                    await process.WaitForExitAsync(cancellationToken);
+                    await process.WaitForExitAsync(stopping.Token);
                 }
                 catch (OperationCanceledException)
                 {
                     Stop(process, command);
                     await LetGoOfOutputAsync(output, errors);
+
+                    // The limit, not the caller: a failed command the caller can report, rather than a stopped run
+                    if (limit.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    {
+                        throw new TimeoutException("git " + command.Name + " took longer than its time limit of " + timeLimit + " and was stopped");
+                    }
+
                     throw;
                 }
 

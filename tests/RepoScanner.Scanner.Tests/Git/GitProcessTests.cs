@@ -16,6 +16,9 @@ namespace RepoScanner.Scanner.Tests.Git
         // A fake PAT: values starting "your-" are placeholders to RepoScanner's own self-scan (Issue 3 design)
         private const string Pat = "your-test-pat-0001";
 
+        // Far longer than any command here takes, for the tests that are not about the time limit
+        private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+
         // The arguments go through ArgumentList, so nothing is re-quoted, and only the command's variables are added
         [Test]
         public void CreateStartInfo_UsesTheCommandsArgumentsAndEnvironment()
@@ -43,7 +46,7 @@ namespace RepoScanner.Scanner.Tests.Git
         [Test]
         public async Task RunAsync_ReturnsWhatGitPrinted()
         {
-            string output = await Git().RunAsync(Command("version", "--version"), CancellationToken.None);
+            string output = await Git().RunAsync(Command("version", "--version"), OneMinute, CancellationToken.None);
 
             Assert.That(output, Does.StartWith("git version"));
         }
@@ -54,7 +57,7 @@ namespace RepoScanner.Scanner.Tests.Git
         {
             GitCommand failing = Command("fail", "-c", "alias.fail=!echo first line >&2; echo " + Pat + " >&2; exit 3", "fail");
 
-            GitCommandException exception = Assert.ThrowsAsync<GitCommandException>(() => Git().RunAsync(failing, CancellationToken.None));
+            GitCommandException exception = Assert.ThrowsAsync<GitCommandException>(() => Git().RunAsync(failing, OneMinute, CancellationToken.None));
             bool leaked = exception.Message.Contains(Pat, StringComparison.Ordinal) || exception.StandardError.Contains(Pat, StringComparison.Ordinal);
 
             using (Assert.EnterMultipleScope())
@@ -75,15 +78,30 @@ namespace RepoScanner.Scanner.Tests.Git
 
             using (CancellationTokenSource stopping = new CancellationTokenSource(TimeSpan.FromMilliseconds(500)))
             {
-                await Assert.ThatAsync(() => Git().RunAsync(slow, stopping.Token), Throws.InstanceOf<OperationCanceledException>());
+                await Assert.ThatAsync(() => Git().RunAsync(slow, OneMinute, stopping.Token), Throws.InstanceOf<OperationCanceledException>());
             }
+
+            Assert.That(elapsed.Elapsed, Is.LessThan(TimeSpan.FromSeconds(4)));
+        }
+
+        // #40: a command that runs past its time limit is stopped, with its helper processes, and says so. 4 seconds, not
+        // 1, for the same reason as the cancel test above: a surviving child would hold RunAsync for 5 seconds more.
+        [Test]
+        public async Task RunAsync_PastTheTimeLimit_StopsGitAndItsChildAndThrowsATimeout()
+        {
+            GitCommand slow = Command("slow", "-c", "alias.slow=!sleep 60", "slow");
+            Stopwatch elapsed = Stopwatch.StartNew();
+
+            await Assert.ThatAsync(
+                () => Git().RunAsync(slow, TimeSpan.FromSeconds(1), CancellationToken.None),
+                Throws.TypeOf<TimeoutException>().With.Message.StartsWith("git slow took longer than its time limit"));
 
             Assert.That(elapsed.Elapsed, Is.LessThan(TimeSpan.FromSeconds(4)));
         }
 
         private static GitProcess Git()
         {
-            return new GitProcess(new FakeLogger<GitProcess>());
+            return new GitProcess(TimeProvider.System, new FakeLogger<GitProcess>());
         }
 
         // A command as GitCommand builds them: prompts off, and the fake PAT as the secret to wipe

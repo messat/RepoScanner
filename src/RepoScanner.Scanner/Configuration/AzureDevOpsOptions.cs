@@ -21,6 +21,10 @@ namespace RepoScanner.Scanner.Configuration
         [Required(ErrorMessage = "Scanner:AzureDevOps:Pat is required in queue mode. Locally, set the Scanner__AzureDevOps__Pat user environment variable to a personal access token with Code (Read).")]
         public string Pat { get; init; } = string.Empty;
 
+        // ADR-016's cap on one clone (#40). ScanTimeoutPerRepoMinutes (15) still covers the clone and the scan together.
+        [Range(1, 1440)]
+        public int CloneTimeoutMinutes { get; init; } = 8;
+
         // Runs after the attribute checks above pass. The message never repeats the value, which could hold a password.
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
@@ -41,7 +45,7 @@ namespace RepoScanner.Scanner.Configuration
         // A record's ToString prints every property, so a settings object in a log line would print the PAT
         private bool PrintMembers(StringBuilder builder)
         {
-            builder.Append("OrganizationUrl = ").Append(OrganizationUrl).Append(", Pat = ***");
+            builder.Append("OrganizationUrl = ").Append(OrganizationUrl).Append(", Pat = ***, CloneTimeoutMinutes = ").Append(CloneTimeoutMinutes);
             return true;
         }
     }
