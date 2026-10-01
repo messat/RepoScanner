@@ -32,6 +32,18 @@ namespace RepoScanner.Scanner.Tests
 
         public void Dispose()
         {
+            // A git repository inside (Issue 8) has read-only files on Windows, which Directory.Delete cannot delete.
+            // Hidden files such as .git are included, and links are not followed, so nothing outside is changed.
+            EnumerationOptions everyFileWithoutFollowingLinks = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            };
+            foreach (string file in Directory.EnumerateFiles(FullPath, "*", everyFileWithoutFollowingLinks))
+            {
+                File.SetAttributes(file, File.GetAttributes(file) & ~FileAttributes.ReadOnly);
+            }
+
             // A symbolic link inside is deleted as a link; what it points to is left alone
             Directory.Delete(FullPath, recursive: true);
         }
