@@ -30,6 +30,7 @@ RepoScanner.Scanner ──► RepoScanner.Data ──► RepoScanner.Core
 - SQL Server installed on your machine (Express, Developer or a full edition), reached with Windows authentication. Only needed to create and use the local database; the tests do not need it
 - SQL Server Management Studio (optional), to look at the tables
 - To scan from the queue locally: [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite), the local storage emulator, installed with npm; the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), for `scripts/enqueue-local.ps1`; and Azure Storage Explorer (optional), to look at the queues
+- To run in a container: [Docker Desktop](https://www.docker.com/products/docker-desktop/), with Linux containers, to build and run the scanner image
 
 ## Build and run
 
@@ -254,6 +255,45 @@ dotnet run --project src/RepoScanner.Scanner
 - A message in the poison queue is kept for 30 days. To try it again, fix the cause and move it back to its queue with Storage Explorer's **Move**.
 - The run stops when the queue is empty, or when less than 15 minutes is left of its 50-minute budget, leaving the rest of the messages for the next run.
 
+## Run in a container
+
+The image is what Azure runs ([Issue 9 design](docs/design/2026-10-01-containerisation-and-local-docker-run.md)). The container holds only the scanner: it reaches Azurite and SQL Server on this machine through `host.docker.internal`, Docker Desktop's name for the machine it runs on, as the storage account and Azure SQL Database are outside the Container Apps environment in Azure. There is no docker-compose. Nothing starts the container when a message arrives, as the job's scale rule does in Azure: you run it.
+
+### One-off setup
+
+1. Install Docker Desktop and start it.
+2. Start Azurite as in [Scan from the queue locally](#scan-from-the-queue-locally). It needs no extra flags: Docker Desktop passes `host.docker.internal` to this machine's own 127.0.0.1, where Azurite listens.
+3. Set up SQL Server for the container, as in [Database and migrations](#database-and-migrations), One-off setup: TCP/IP on port 1433, mixed-mode authentication and the `repo_scanner_local` login. A Linux container cannot use Windows authentication.
+4. Copy `.env.example` to `.env`, which git ignores, and replace each `<...>`. One `NAME=value` per line, with no quotes: Docker keeps quotes as part of the value.
+
+   ```bash
+   copy .env.example .env
+   ```
+
+   | Setting | Value |
+   |---|---|
+   | `Scanner__Queue__Name` | `scan-nightly`, or `scan-ondemand` |
+   | `Scanner__Queue__ConnectionString` | Azurite's full connection string, with `QueueEndpoint=http://host.docker.internal:10001/devstoreaccount1`. Replace `<azurite-account-key>` with the well-known key in the [Azurite documentation](https://learn.microsoft.com/azure/storage/common/storage-use-azurite#well-known-storage-account-and-key). `UseDevelopmentStorage=true` does not work here: it points at 127.0.0.1, which in the container is the container itself |
+   | `Scanner__AzureDevOps__OrganizationUrl` | `https://dev.azure.com/BlacklightInternalsMo` |
+   | `Scanner__AzureDevOps__Pat` | The same PAT as your `Scanner__AzureDevOps__Pat` user environment variable |
+   | `Scanner__Database__ConnectionString` | `Server=host.docker.internal,1433` with the `repo_scanner_local` login and its password |
+
+**Where settings live.** `dotnet run` and `dotnet ef` read your user environment variables; the container reads only `.env`. The two cannot share one place, because the database connection string differs: Windows authentication for `dotnet ef`, which creates and changes tables, and the read-and-write-only login for the container. **The PAT is in both, so a renewed PAT goes in both.** A `.env` with an old one exits 1 with `Azure DevOps refused the token`.
+
+### Build and run
+
+```bash
+docker build -t reposcanner:v1 .
+```
+
+```bash
+docker run --rm --env-file .env reposcanner:v1
+```
+
+- The scanner runs as it does in Azure: the `Production` environment, as the non-root user `app`, with every setting from `.env`. `--rm` deletes the stopped container.
+- The exit code is the scanner's (see [Exit codes](#exit-codes)).
+- With no Development settings, a failed scan's message reappears after 65 minutes, not 1. Add `Scanner__Execution__VisibilityTimeoutMinutes=1` to `.env` to change that.
+
 ## Known limitations
 
 The queue loop:
@@ -299,6 +339,15 @@ The code-pattern scanner:
 - Skips, with a warning, a file whose parentheses and angle brackets nest more than 200 deep, and one the parser gives up on, because Roslyn's parser can crash the process on very deeply nested code.
 - Opens a new finding, and resolves the old one, when the method or class around it is renamed or its code changes; a suppression does not follow it ([ADR-024](docs/adr/ADR-024-fingerprint-per-scanner-without-line-numbers.md)).
 
+The container:
+
+- The base images are tagged `10.0`, so two builds a month apart can have different .NET 10 patches and Ubuntu packages, including git.
+- `host.docker.internal` comes with Docker Desktop. A Linux machine, such as a pipeline agent, needs `--add-host=host.docker.internal:host-gateway`.
+- The PAT is in two places locally, your user environment variable and `.env`, and both need renewing.
+- `.env` holds the PAT and the SQL password in plain text. It is git-ignored and kept out of the image, but anyone who can read the repository folder can read it.
+- The image is built for this machine's platform, linux/amd64, which is what Container Apps runs.
+- Nothing starts the container when a message arrives; you run it. `--path` is not supported in the container.
+
 ## Exit codes
 
 The Container Apps Job reads the exit code to decide whether an execution succeeded.
@@ -308,6 +357,8 @@ The Container Apps Job reads the exit code to decide whether an execution succee
 | `0` | Success, or nothing to do. Also a run in which some scanners failed: it is saved as `PartiallyCompleted` and logged as a warning. In queue mode, also a run in which some repositories failed: each is saved as a `Failed` scan run and its message is tried again |
 | `1` | Unexpected failure during the run, logged with the full exception. With `--path`, also when every scanner failed. In queue mode, also when the queue or the database cannot be reached, when Azure DevOps refuses the PAT, or when the run is stopped (Ctrl+C, or Azure stopping the job) |
 | `2` | Invalid configuration, a `--path` that does not name an existing folder, or a queue or poison queue that does not exist: logged as one line saying what is wrong, listing every setting that is wrong when there are several |
+
+In a container, the container's exit code is the scanner's.
 
 To see exit code 2 locally, run without the Development settings:
 
@@ -322,6 +373,9 @@ global.json               pins the .NET SDK version
 Directory.Build.props     build settings shared by every project
 Directory.Packages.props  every NuGet package version, set once (Central Package Management)
 .editorconfig             code style rules, enforced during build
+Dockerfile                the scanner image: built with the .NET SDK, shipped on the .NET runtime with git
+.dockerignore             what the image build may read: only the build files and src/
+.env.example              the container's settings, copied to the git-ignored .env and filled in
 .config/
   dotnet-tools.json       pins the dotnet ef tool version
 RepoScanner.sln           solution file
