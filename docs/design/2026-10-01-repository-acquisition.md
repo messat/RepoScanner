@@ -34,14 +34,14 @@ Agreed in the design discussion on 2026-10-01.
 
 | # | Question | Decision | Reason |
 |---|---|---|---|
-| 1 | How git gets the PAT | In environment variables set on the git process only: `GIT_CONFIG_COUNT=1`, `GIT_CONFIG_KEY_0=http.extraheader` and `GIT_CONFIG_VALUE_0=AUTHORIZATION: Basic <Base64 of ":" + PAT>`. Never in git's arguments, the URL or a file | Arguments show in process lists (Task Manager's Command line column, `ps`) and crash dumps, which criterion 2 rules out. Git reads `GIT_CONFIG_*` as it reads `-c` (Git 2.31 and later), and does not save it in the clone's `.git/config` (checked with Git 2.50 on 2026-10-01). Amends ADR-016, which said `-c http.extraheader` |
+| 1 | How git gets the PAT | In environment variables set on the git process only: `GIT_CONFIG_COUNT=1`, `GIT_CONFIG_KEY_0=http.<OrganizationUrl>/.extraheader` and `GIT_CONFIG_VALUE_0=AUTHORIZATION: Basic <Base64 of ":" + PAT>`. Never in git's arguments, the URL or a file. Scoped to the organisation, so the header goes to no other server (added after the final review) | Arguments show in process lists (Task Manager's Command line column, `ps`) and crash dumps, which criterion 2 rules out. Git reads `GIT_CONFIG_*` as it reads `-c` (Git 2.31 and later), and does not save it in the clone's `.git/config` (checked with Git 2.50 on 2026-10-01). Amends ADR-016, which said `-c http.extraheader`. Unscoped, the header also went to any server a repository's `.lfsconfig` names, as the final review showed |
 | 2 | Where the PAT is kept locally | The user environment variable `Scanner__AzureDevOps__Pat` | No set-up beyond `setx`, never in the repository, and it is how Azure hands the PAT to the job too, so local runs match Azure. dotnet user-secrets is not used: it needs `dotnet user-secrets init`, and does not reach a Docker container (Issue 9) without mounting its folder. Amends ADR-017 |
 | 3 | Where the PAT is kept in Azure | Key Vault, as ADR-007 decided. The job's secret reference gives it to the app as the same environment variable | Unchanged. Set up in the deployment Issues |
 | 4 | One PAT or two | One PAT with Code (Read) only, shared by the enqueuer and both scanner jobs | Both need the same permission: listing repositories (`GET https://dev.azure.com/{organization}/_apis/git/repositories`) needs `vso.code`, as cloning does. One secret, as ADR-007 says, and one expiry to watch. ADR-014 already runs all three as `id-scanner`. Two PATs with the same scope would add a secret and gain nothing |
 | 5 | Which organisation | One per scanner deployment, from `Scanner:AzureDevOps:OrganizationUrl`. The message gives the project and repository | A PAT belongs to one organisation, and the message format (Issue 7) has no organisation field. Locally it is `https://dev.azure.com/BlacklightInternalsMo`, where `victim-repo` is |
 | 6 | How git is run | The git command line, through `Process` with `ArgumentList`, as ADR-016 decided | LibGit2Sharp has no reliable shallow clone (ADR-016) |
 | 7 | The clone command | `git -c credential.helper= -c core.longpaths=true clone --depth 1 --single-branch --branch <defaultBranch> -- <url> <folder>` | The latest commit of one branch only (ADR-016). `credential.helper=` switches off any sign-in helper, such as Git Credential Manager on Windows, which could open a sign-in window, or quietly use the developer's own saved login, when the PAT is rejected; it holds no secret, so it may be an argument. `core.longpaths` lets deep paths clone on Windows and is ignored elsewhere. `--` stops a URL or folder being read as an option |
-| 8 | Prompts | `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never` on every git process | A rejected PAT fails in seconds instead of waiting for input that never comes (ADR-016) |
+| 8 | Prompts and Git LFS | `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never` and `GIT_LFS_SKIP_SMUDGE=1` on every git process | A rejected PAT fails in seconds instead of waiting for input that never comes (ADR-016). Git LFS, which Git for Windows switches on, would download from any server a repository's `.lfsconfig` names, and its refusal would read as a rejected PAT; LFS files stay as their pointers instead (added after the final review) |
 | 9 | The commit ID | `git rev-parse HEAD` after the clone. It must be 40 hexadecimal characters | `ScanRun.CommitSha` is `varchar(40)`, and Azure DevOps uses SHA-1 |
 | 10 | Where the clone goes | A new folder for each clone: `<temp>/reposcanner/<12 random hexadecimal characters>` | The container's temporary directory (ADR-016), and a fresh name each time, so two scans never share a folder. The root is passed in, so tests use their own |
 | 11 | Deleting the folder | When the workspace is closed, after clearing read-only attributes on the files inside, without following links. A failed delete logs a warning | Git marks its pack files read-only on Windows, and `Directory.Delete` then fails (checked on 2026-10-01). A failed delete must not hide the scan's own result |
@@ -155,7 +155,7 @@ public static class CloneUrl
 }
 ```
 
-`https://dev.azure.com/BlacklightInternalsMo/Kudos%20Wall/_git/victim-repo`. Git decodes `%20` in `file:///` URLs too (checked on 2026-10-01), so tests use the same code with a project name that has a space.
+`https://dev.azure.com/BlacklightInternalsMo/Kudos%20Wall/_git/victim-repo`. Git decodes `%20` in `file:///` URLs too (checked on 2026-10-01), so tests use the same code with a project name that has a space. `ScanRequestReader` refuses `.` and `..` as a project name, as it does for a repository name: git removes them from a URL, which would take the clone outside the organisation the header is scoped to (added after the final review).
 
 ### Running git
 
@@ -184,7 +184,7 @@ namespace RepoScanner.Scanner.Git
 }
 ```
 
-- Every command sets `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`. `Clone` also sets `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_0` and `GIT_CONFIG_VALUE_0` (decision 1), and its `Secrets` are the PAT and its Base64 form.
+- Every command sets `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never` and `GIT_LFS_SKIP_SMUDGE=1`. `Clone` also sets `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_0` and `GIT_CONFIG_VALUE_0` (decision 1), and its `Secrets` are the PAT and its Base64 form.
 - Standard output and standard error are read while git runs, so a full pipe never stalls it. Only the last 20 lines of standard error are kept.
 - Stopping uses `Process.Kill(entireProcessTree: true)`, because git starts helper processes (`git-remote-https`) that would otherwise carry on downloading.
 
@@ -245,7 +245,7 @@ Any other `GitCommandException` is an ordinary failed scan (decision 14), with g
 
 ### ADR amendments
 
-**ADR-016, added in #37.** *2026-10-01 (Issue 8): the PAT reaches git in environment variables on the git process (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_0=http.extraheader`, `GIT_CONFIG_VALUE_0`), not as a `-c` argument, so it never appears in a process list. `-c credential.helper=` switches off any sign-in helper, and `GCM_INTERACTIVE=never` joins `GIT_TERMINAL_PROMPT=0`, so a rejected PAT fails rather than prompting or falling back to a saved login. A rejected PAT stops the run with exit 1 and leaves the message, since every repository would fail the same way. The PAT, Code (Read) only, is shared with the enqueuer, which needs the same scope to list repositories. The decision is otherwise unchanged.*
+**ADR-016, added in #37.** *2026-10-01 (Issue 8): the PAT reaches git in environment variables on the git process (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_0=http.<OrganizationUrl>/.extraheader`, `GIT_CONFIG_VALUE_0`), not as a `-c` argument, so it never appears in a process list, and it is scoped to the organisation, so it goes to no other server. `-c credential.helper=` switches off any sign-in helper, and `GCM_INTERACTIVE=never` joins `GIT_TERMINAL_PROMPT=0`, so a rejected PAT fails rather than prompting or falling back to a saved login. `GIT_LFS_SKIP_SMUDGE=1` leaves Git LFS files as their pointers, since LFS would fetch from any server a repository's `.lfsconfig` names. A rejected PAT stops the run with exit 1 and leaves the message, since every repository would fail the same way. The PAT, Code (Read) only, is shared with the enqueuer, which needs the same scope to list repositories. The decision is otherwise unchanged.*
 
 **ADR-017, added in #37.** *2026-10-01 (Issue 8): locally the PAT is the user environment variable `Scanner__AzureDevOps__Pat`, not dotnet user-secrets: it needs no set-up in the project, and docker-compose can pass it to the scanner container in Issue 9. In Azure it is still a Key Vault secret reference, which reaches the job as the same environment variable. The decision is otherwise unchanged.*
 
@@ -351,6 +351,7 @@ One task at a time, stopping after each for review, then a commit whose message 
 ## Known limitations
 
 - Only the latest commit of the default branch is scanned. A secret committed and later removed stays in history and is not found (ADR-016).
+- Files kept in Git LFS are scanned as their small pointer files; their content is never downloaded (decision 8).
 - One organisation per scanner deployment.
 - The PAT acts as the person who created it: it sees only their repositories, stops working if their account is removed, and expires within a year, so it needs renewing.
 - While git runs, the PAT is in its process's environment, which another program running as the same user can read.

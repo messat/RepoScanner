@@ -163,14 +163,17 @@ namespace RepoScanner.Scanner.Tests.Sources
             }
         }
 
-        // Review Focus 5: with tracing on, git prints its request headers. Set for this process, so git inherits it.
+        // Review Focus 5: with tracing on, git prints its request headers. GIT_TRACE_REDACT=0 stops git hiding the header
+        // itself, so only the scanner's own wiping stands between it and the scan run's error. Set for this process, so
+        // git inherits them.
         [Test]
         public void OpenAsync_WithGitTracingOn_NeverReportsThePat()
         {
-            string? traceCurl = Environment.GetEnvironmentVariable("GIT_TRACE_CURL");
-            string? curlVerbose = Environment.GetEnvironmentVariable("GIT_CURL_VERBOSE");
+            string[] names = { "GIT_TRACE_CURL", "GIT_CURL_VERBOSE", "GIT_TRACE_REDACT" };
+            string?[] saved = names.Select(Environment.GetEnvironmentVariable).ToArray();
             Environment.SetEnvironmentVariable("GIT_TRACE_CURL", "1");
             Environment.SetEnvironmentVariable("GIT_CURL_VERBOSE", "1");
+            Environment.SetEnvironmentVariable("GIT_TRACE_REDACT", "0");
             try
             {
                 using (FakeAzureDevOps server = FakeAzureDevOps.StartRefusing())
@@ -178,8 +181,9 @@ namespace RepoScanner.Scanner.Tests.Sources
                     AzureDevOpsAuthenticationException exception = Assert.ThrowsAsync<AzureDevOpsAuthenticationException>(
                         () => Source(server.OrganizationUrl).OpenAsync(Request("Kudos Wall", "victim-repo", "main"), CancellationToken.None));
 
-                    // ToString includes the inner GitCommandException, with what git printed
-                    string reported = exception.ToString() + string.Join("\n", _logger.Collector.GetSnapshot().Select(record => record.Message));
+                    // The last lines git printed, kept for the clone source, as well as the messages and the log
+                    string standardError = ((GitCommandException)exception.InnerException!).StandardError;
+                    string reported = exception + "\n" + standardError + "\n" + string.Join("\n", _logger.Collector.GetSnapshot().Select(record => record.Message));
                     bool leaked = reported.Contains(Pat, StringComparison.Ordinal) || reported.Contains(Base64, StringComparison.Ordinal);
 
                     Assert.That(leaked, Is.False, "the PAT reached an exception or a log line");
@@ -187,8 +191,45 @@ namespace RepoScanner.Scanner.Tests.Sources
             }
             finally
             {
-                Environment.SetEnvironmentVariable("GIT_TRACE_CURL", traceCurl);
-                Environment.SetEnvironmentVariable("GIT_CURL_VERBOSE", curlVerbose);
+                for (int index = 0; index < names.Length; index++)
+                {
+                    Environment.SetEnvironmentVariable(names[index], saved[index]);
+                }
+            }
+        }
+
+        // Final review, Critical: a repository's .lfsconfig can name any server. Git LFS must neither send it the PAT nor
+        // let its refusal read as a rejected PAT that stops the run, so LFS files stay as their pointers.
+        [Test]
+        public async Task OpenAsync_ForARepositoryWhoseLfsConfigNamesAnotherServer_SendsItNothing()
+        {
+            try
+            {
+                BareRepository.Git(_temp.FullPath, "lfs", "version");
+            }
+            catch (InvalidOperationException)
+            {
+                Assert.Ignore("Git LFS is not installed here, so nothing would contact the server anyway");
+            }
+
+            using (FakeAzureDevOps elsewhere = FakeAzureDevOps.StartRefusing())
+            {
+                string content = Path.GetDirectoryName(_temp.WriteText("content/README.md", "second commit"))!;
+                _temp.WriteText("content/.gitattributes", "*.bin filter=lfs diff=lfs merge=lfs -text\n");
+                _temp.WriteText("content/.lfsconfig", "[lfs]\n\turl = " + elsewhere.OrganizationUrl + "/collector\n");
+                _temp.WriteText("content/big.bin", "version https://git-lfs.github.com/spec/v1\noid sha256:" + new string('a', 64) + "\nsize 12345\n");
+                BareRepository.Create(_repos.FullPath, "Kudos Wall", "victim-repo", "main", content);
+
+                await using (RepositoryWorkspace workspace = await Source(BareRepository.OrganizationUrl(_repos.FullPath))
+                    .OpenAsync(Request("Kudos Wall", "victim-repo", "main"), CancellationToken.None))
+                {
+                    using (Assert.EnterMultipleScope())
+                    {
+                        Assert.That(elsewhere.FirstRequest.IsCompleted, Is.False, "Git LFS contacted the server the repository named");
+                        Assert.That(elsewhere.AuthorizationHeaders, Is.Empty);
+                        Assert.That(File.ReadAllText(Path.Combine(workspace.Folder, "big.bin")), Does.StartWith("version https://git-lfs.github.com/spec/v1"));
+                    }
+                }
             }
         }
 

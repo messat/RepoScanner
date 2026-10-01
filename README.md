@@ -235,7 +235,7 @@ Or by hand in Storage Explorer: open the queue, **Add Message**, paste the messa
 | `schemaVersion` | `1` |
 | `correlationId` | Any GUID. Saved as `ScanRuns.CorrelationId`, to follow one request through the logs |
 | `repositoryId` | The repository's Azure DevOps GUID; any GUID locally. Keep the same one for the same repository |
-| `projectName`, `defaultBranch` | Not empty. The branch is `main`, not `refs/heads/main` |
+| `projectName`, `defaultBranch` | Not empty, and the project not `.` or `..`. The branch is `main`, not `refs/heads/main` |
 | `repositoryName` | The repository to clone. No `\`, `/` or `..` |
 
 ### Run it
@@ -267,6 +267,7 @@ The queue loop:
 Cloning:
 
 - **Only the latest commit of the default branch is scanned.** A secret committed and later removed stays in history and is not found, and other branches are not scanned ([ADR-016](docs/adr/ADR-016-shallow-single-branch-clone-with-the-credential-in-a-header.md)).
+- Files kept in Git LFS are scanned as their small pointer files: their content is never downloaded, since LFS would fetch it from whatever server the repository names, and the PAT is sent only to the organisation.
 - One organisation per scanner deployment, since a PAT belongs to one.
 - The PAT acts as the person who created it: it sees only their repositories, stops working if their account is removed, and expires within a year, so it needs renewing.
 - While git runs, the PAT is in its process's environment, which another program running as the same user can read.

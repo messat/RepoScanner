@@ -104,7 +104,7 @@ namespace RepoScanner.Scanner.Sources
         {
             try
             {
-                await _git.RunAsync(GitCommand.Clone(url, branch, folder, _options.Pat), TimeSpan.FromMinutes(_options.CloneTimeoutMinutes), cancellationToken);
+                await _git.RunAsync(GitCommand.Clone(_options.OrganizationUrl, url, branch, folder, _options.Pat), TimeSpan.FromMinutes(_options.CloneTimeoutMinutes), cancellationToken);
             }
             catch (TimeoutException exception)
             {

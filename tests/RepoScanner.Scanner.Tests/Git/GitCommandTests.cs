@@ -13,6 +13,8 @@ namespace RepoScanner.Scanner.Tests.Git
         // A fake PAT: values starting "your-" are placeholders to RepoScanner's own self-scan (Issue 3 design)
         private const string Pat = "your-test-pat-0001";
 
+        private const string OrganizationUrl = "https://dev.azure.com/BlacklightInternalsMo";
+
         private const string Url = "https://dev.azure.com/BlacklightInternalsMo/Kudos%20Wall/_git/victim-repo";
 
         private static readonly string Folder = Path.Combine(Path.GetTempPath(), "reposcanner", "3f9c0a1b7d2e");
@@ -25,7 +27,7 @@ namespace RepoScanner.Scanner.Tests.Git
         [Test]
         public void Clone_HasTheArgumentsOfTheDesign()
         {
-            GitCommand command = GitCommand.Clone(Url, "main", Folder, Pat);
+            GitCommand command = GitCommand.Clone(OrganizationUrl, Url, "main", Folder, Pat);
 
             using (Assert.EnterMultipleScope())
             {
@@ -42,16 +44,39 @@ namespace RepoScanner.Scanner.Tests.Git
         [Test]
         public void Clone_PutsThePatOnlyInTheEnvironment()
         {
-            GitCommand command = GitCommand.Clone(Url, "main", Folder, Pat);
+            GitCommand command = GitCommand.Clone(OrganizationUrl, Url, "main", Folder, Pat);
             bool leaked = command.Arguments.Any(argument => argument.Contains(Pat, StringComparison.Ordinal) || argument.Contains(Base64, StringComparison.Ordinal));
 
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(leaked, Is.False, "the PAT is in git's arguments");
                 Assert.That(command.Environment["GIT_CONFIG_COUNT"], Is.EqualTo("1"));
-                Assert.That(command.Environment["GIT_CONFIG_KEY_0"], Is.EqualTo("http.extraheader"));
+                Assert.That(command.Environment["GIT_CONFIG_KEY_0"], Is.EqualTo("http.https://dev.azure.com/BlacklightInternalsMo/.extraheader"));
                 Assert.That(command.Environment["GIT_CONFIG_VALUE_0"], Is.EqualTo("AUTHORIZATION: Basic " + Base64));
                 Assert.That(command.Secrets, Is.EquivalentTo(new string[] { Pat, Base64 }));
+            }
+        }
+
+        // Final review, Critical: the header goes only to the organisation, never to another server a repository names,
+        // such as in a .lfsconfig. Git matches the scope as a prefix, so every repository in the organisation gets it.
+        [TestCase("https://dev.azure.com/BlacklightInternalsMo")]
+        [TestCase("https://dev.azure.com/BlacklightInternalsMo/")]
+        public void Clone_ScopesTheHeaderToTheOrganisation(string organizationUrl)
+        {
+            GitCommand command = GitCommand.Clone(organizationUrl, Url, "main", Folder, Pat);
+
+            Assert.That(command.Environment["GIT_CONFIG_KEY_0"], Is.EqualTo("http.https://dev.azure.com/BlacklightInternalsMo/.extraheader"));
+        }
+
+        // Final review, Critical: Git LFS would download files from whatever server a repository's .lfsconfig names, so
+        // no command fetches LFS content; LFS files are scanned as their small pointer files
+        [Test]
+        public void EveryCommand_SkipsGitLfsDownloads()
+        {
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(GitCommand.Clone(OrganizationUrl, Url, "main", Folder, Pat).Environment["GIT_LFS_SKIP_SMUDGE"], Is.EqualTo("1"));
+                Assert.That(GitCommand.RevParseHead(Folder).Environment["GIT_LFS_SKIP_SMUDGE"], Is.EqualTo("1"));
             }
         }
 
@@ -59,7 +84,7 @@ namespace RepoScanner.Scanner.Tests.Git
         [Test]
         public void Clone_TurnsOffPrompts()
         {
-            GitCommand command = GitCommand.Clone(Url, "main", Folder, Pat);
+            GitCommand command = GitCommand.Clone(OrganizationUrl, Url, "main", Folder, Pat);
 
             using (Assert.EnterMultipleScope())
             {
@@ -88,7 +113,7 @@ namespace RepoScanner.Scanner.Tests.Git
         [Test]
         public void ToString_ShowsNoSecrets()
         {
-            string text = GitCommand.Clone(Url, "main", Folder, Pat).ToString();
+            string text = GitCommand.Clone(OrganizationUrl, Url, "main", Folder, Pat).ToString();
             bool leaked = text.Contains(Pat, StringComparison.Ordinal) || text.Contains(Base64, StringComparison.Ordinal);
 
             using (Assert.EnterMultipleScope())

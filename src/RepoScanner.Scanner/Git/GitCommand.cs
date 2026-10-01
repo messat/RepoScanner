@@ -28,17 +28,20 @@ namespace RepoScanner.Scanner.Git
         // Values replaced by *** in anything git prints
         public IReadOnlyList<string> Secrets { get; }
 
-        // The latest commit of one branch (decision 7), with the PAT in environment variables only (decision 1)
-        public static GitCommand Clone(string url, string branch, string folder, string pat)
+        // The latest commit of one branch (decision 7), with the PAT in environment variables only (decision 1), sent only
+        // to organizationUrl, which url is inside
+        public static GitCommand Clone(string organizationUrl, string url, string branch, string folder, string pat)
         {
             // Azure DevOps takes a PAT as Basic credentials with an empty user name
             string credential = Convert.ToBase64String(Encoding.UTF8.GetBytes(":" + pat));
 
-            // Read by git exactly as -c http.extraheader=... would be (Git 2.31 and later), but never shown in a
-            // process list, and never saved in the clone's .git/config
-            Dictionary<string, string> environment = NoPrompts();
+            // Read by git exactly as -c http.<organisation>/.extraheader=... would be (Git 2.31 and later), but never shown
+            // in a process list, and never saved in the clone's .git/config. Scoped to the organisation, so the header
+            // goes to no other server, such as one a repository's .lfsconfig names (final review). Git matches the scope
+            // as a prefix, so every repository in the organisation gets it.
+            Dictionary<string, string> environment = EveryCommandEnvironment();
             environment["GIT_CONFIG_COUNT"] = "1";
-            environment["GIT_CONFIG_KEY_0"] = "http.extraheader";
+            environment["GIT_CONFIG_KEY_0"] = "http." + organizationUrl.TrimEnd('/') + "/.extraheader";
             environment["GIT_CONFIG_VALUE_0"] = "AUTHORIZATION: Basic " + credential;
 
             string[] arguments =
@@ -61,7 +64,7 @@ namespace RepoScanner.Scanner.Git
         // clone on disk, so it needs no PAT.
         public static GitCommand RevParseHead(string folder)
         {
-            return new GitCommand("rev-parse", new string[] { "-C", folder, "rev-parse", "HEAD" }, NoPrompts(), Array.Empty<string>());
+            return new GitCommand("rev-parse", new string[] { "-C", folder, "rev-parse", "HEAD" }, EveryCommandEnvironment(), Array.Empty<string>());
         }
 
         // The arguments only, never the environment, which holds the PAT
@@ -70,15 +73,19 @@ namespace RepoScanner.Scanner.Git
             return "git " + string.Join(" ", Arguments);
         }
 
-        // Every command: git never waits for input that cannot come, so a rejected PAT fails in seconds (decision 8)
-        private static Dictionary<string, string> NoPrompts()
+        // Every command: git never waits for input that cannot come, so a rejected PAT fails in seconds (decision 8), and
+        // never downloads Git LFS content
+        private static Dictionary<string, string> EveryCommandEnvironment()
         {
             return new Dictionary<string, string>
             {
                 // No user name or password prompt in a terminal
                 ["GIT_TERMINAL_PROMPT"] = "0",
                 // No Git Credential Manager window, should a helper still be configured somewhere
-                ["GCM_INTERACTIVE"] = "never"
+                ["GCM_INTERACTIVE"] = "never",
+                // LFS files stay as their small pointer files (final review). Git for Windows switches LFS on, and LFS
+                // would fetch from whatever server a repository's .lfsconfig names, and fill the replica's 2 GiB disk.
+                ["GIT_LFS_SKIP_SMUDGE"] = "1"
             };
         }
     }
