@@ -29,6 +29,7 @@ RepoScanner.Scanner ──► RepoScanner.Data ──► RepoScanner.Core
 - Git
 - SQL Server installed on your machine (Express, Developer or a full edition), reached with Windows authentication. Only needed to create and use the local database; the tests do not need it
 - SQL Server Management Studio (optional), to look at the tables
+- To scan from the queue locally: [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite), the local storage emulator, installed with npm; the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), for `scripts/enqueue-local.ps1`; and Azure Storage Explorer (optional), to look at the queues
 
 ## Build and run
 
@@ -43,6 +44,8 @@ dotnet run --project src/RepoScanner.Scanner
 ```bash
 dotnet test RepoScanner.sln
 ```
+
+Without `--path`, `dotnet run` reads its queue: see [Scan from the queue locally](#scan-from-the-queue-locally).
 
 `dotnet test` also measures line coverage (coverlet) and fails if Core or Scanner drop below 80%. Data's coverage is reported but not enforced, and leaves out the generated `Migrations/` code. Reports are written to `tests/<project>/TestResults/coverage/coverage.cobertura.xml` (git-ignored).
 
@@ -62,12 +65,19 @@ The app checks its settings when it starts and refuses to run if any are missing
 
 | Setting | Required | Default | Notes |
 |---|---|---|---|
-| `Scanner:Queue:Name` | Yes | | `scan-nightly` or `scan-ondemand`. Lowercase letters, numbers and hyphens, 3 to 63 characters |
+| `Scanner:Queue:Name` | Yes | | Exactly `scan-nightly` or `scan-ondemand`: the queue is what says whether a scan is nightly or on demand ([Issue 7 design](docs/design/2026-09-29-queue-consumer-and-execution-loop.md)) |
 | `Scanner:Queue:ConnectionString` | One of these two | | Local only: `UseDevelopmentStorage=true` (Azurite) |
 | `Scanner:Queue:ServiceUri` | One of these two | | Azure only, used with managed identity |
 | `Scanner:Queue:PoisonQueueName` | | `<Name>-poison` | Where failing messages are moved. One per lane, e.g. `scan-nightly-poison` (ADR-013) |
 | `Scanner:Queue:MaxDequeueCount` | | `3` | Attempts before a message is moved to the poison queue (ADR-013) |
+| `Scanner:Queue:PoisonMessageTimeToLiveDays` | | `30` | How long a poisoned message is kept, 1 to 365 days. Azure's own default is 7 |
+| `Scanner:Execution:MaxRunDurationMinutes` | | `50` | One run's time budget. No repository is started unless `ScanTimeoutPerRepoMinutes` still fits in what is left, so the run stops before the job's 60-minute limit |
+| `Scanner:Execution:ScanTimeoutPerRepoMinutes` | | `15` | One repository's scan is stopped, and its run marked `Failed`, after this long. Plus 5 minutes, a `Running` scan run counts as abandoned ([ADR-027](docs/adr/ADR-027-skip-a-repository-being-scanned-take-over-an-abandoned-run.md)) |
+| `Scanner:Execution:VisibilityTimeoutMinutes` | | `65`, and `1` in `Development` | How long a taken message is hidden from other runs. In Azure, the job's 60-minute limit plus 5 (ADR-013); 1 minute locally, so a retry can be watched |
+| `Scanner:Source:LocalRoot` | Yes, in queue mode | | Issue 7 only: the folder your repositories are in. A message for `victim-repo` scans `<LocalRoot>\victim-repo`. Locally, the `Scanner__Source__LocalRoot` user environment variable. Replaced by cloning in Issue 8 |
 | `Scanner:Database:ConnectionString` | Yes | | The findings database. Locally, the `Scanner__Database__ConnectionString` user environment variable (see [Database and migrations](#database-and-migrations)); never in an appsettings file (ADR-007) |
+
+With `--path`, only the database setting is needed: the queue, execution and source settings are for queue mode.
 
 As environment variables, `:` becomes `__`, for example:
 
@@ -75,7 +85,7 @@ As environment variables, `:` becomes `__`, for example:
 $env:Scanner__Queue__Name = "scan-ondemand"
 ```
 
-Further settings (Azure DevOps, execution limits) are added with the features that use them. The scanner and the `dotnet ef` tool read the same database connection string: see [Database and migrations](#database-and-migrations).
+The Azure DevOps settings are added with cloning, in Issue 8. The scanner and the `dotnet ef` tool read the same database connection string: see [Database and migrations](#database-and-migrations).
 
 ## Database and migrations
 
@@ -164,7 +174,86 @@ dotnet run --project src/RepoScanner.Scanner -- --path tests/fixtures/patterns-r
 - So is any folder below the scanned one that contains a `.reposcanner-exclude` file. RepoScanner's own test data has one, so its fake secrets and old packages are not reported when this repository is scanned.
 - `tests/fixtures/secrets-repo`, `tests/fixtures/packages-repo` and `tests/fixtures/patterns-repo` are pretend repositories, for trying the scanners out: every secret in them is fake, the packages are old versions on purpose, and the insecure code is on purpose too.
 
+## Scan from the queue locally
+
+Without `--path`, the scanner does what it does in Azure: it takes scan requests from its queue one at a time, scans each repository, saves the findings, deletes the message, and exits when the queue is empty ([Issue 7 design](docs/design/2026-09-29-queue-consumer-and-execution-loop.md)). Locally the queue is in Azurite, outside Docker, as the storage account is outside the Container Apps environment in Azure. Until cloning arrives in Issue 8, the code comes from a folder on your machine.
+
+### One-off setup
+
+1. Install and start Azurite. `--location` keeps the queues and messages between restarts:
+
+   ```bash
+   npm install -g azurite
+   ```
+
+   ```bash
+   azurite --location c:\azurite_data
+   ```
+
+2. Save the folder your repositories are in as a Windows user environment variable. For `C:\EPA DEMO RUNS\victim-repo`, that is `C:\EPA DEMO RUNS`:
+
+   ```bash
+   setx Scanner__Source__LocalRoot "C:\EPA DEMO RUNS"
+   ```
+
+3. Open a new terminal. In VS Code, restart VS Code, since its new terminals copy its own environment; or set the variable for the terminal you are in:
+
+   ```powershell
+   $env:Scanner__Source__LocalRoot = "C:\EPA DEMO RUNS"
+   ```
+
+The scanner never creates queues: in Azure it may only use them. The script below creates the four it needs, `scan-nightly`, `scan-ondemand`, `scan-nightly-poison` and `scan-ondemand-poison`, the first time; or create them in Storage Explorer.
+
+### Add a scan request
+
+With the script, which needs the Azure CLI:
+
+```bash
+.\scripts\enqueue-local.ps1 -RepositoryName victim-repo
+```
+
+- `-Queue scan-ondemand` puts it on the on-demand queue instead, which `dotnet run` reads when `Scanner__Queue__Name` is `scan-ondemand`.
+- `-Malformed` sends `{ "hello": 1 }`, to try the poison queue.
+- The repository's Azure DevOps ID is made from its project and name, so the same repository always lands on the same `Repositories` row. `-RepositoryId <guid>` uses another, such as one already in the database.
+- If PowerShell refuses to run scripts, run it as `powershell -ExecutionPolicy Bypass -File scripts\enqueue-local.ps1 -RepositoryName victim-repo`.
+
+Or by hand in Storage Explorer: open the queue, **Add Message**, paste the message, and untick **Encode message body in Base64**, or the scanner cannot read it:
+
+```json
+{ "schemaVersion": 1, "correlationId": "eb7ff9f4-5926-4be3-bfde-a580db4deb5d", "repositoryId": "f4f1da55-68ba-41b2-a7ac-5f6a0d1d2059", "projectName": "Lumina", "repositoryName": "victim-repo", "defaultBranch": "main" }
+```
+
+| Field | Rule |
+|---|---|
+| `schemaVersion` | `1` |
+| `correlationId` | Any GUID. Saved as `ScanRuns.CorrelationId`, to follow one request through the logs |
+| `repositoryId` | The repository's Azure DevOps GUID; any GUID locally. Keep the same one for the same repository |
+| `projectName`, `defaultBranch` | Not empty. The branch is `main`, not `refs/heads/main` |
+| `repositoryName` | The folder inside `LocalRoot`. No `\`, `/` or `..` |
+
+### Run it
+
+```bash
+dotnet run --project src/RepoScanner.Scanner
+```
+
+- Each message is scanned in turn, and deleted once its scan run is saved. The last line says why the run stopped and counts what it did: `Stopped taking messages from scan-nightly: queue empty. 1 scanned, 0 failed, 0 skipped, 0 poisoned`.
+- **A failed scan** is saved as a `Failed` scan run with the reason, and its message is left. It reappears after a minute locally (65 in Azure) and is tried again the next time you run. On its 4th pick-up it is moved to the lane's poison queue. A request for a folder that is not in `LocalRoot` shows this: run it four times, a minute apart.
+- **A message the scanner cannot read**, such as `-Malformed`, goes straight to the poison queue, with the reason in the log, and gets no scan run.
+- **A repository another run is scanning**, with a `Running` scan run 20 minutes old or less, is skipped: the message is deleted and the log says which run is scanning it. A `Running` scan run older than that was left by a run that died: it is marked `Failed` as abandoned, and the repository is scanned ([ADR-027](docs/adr/ADR-027-skip-a-repository-being-scanned-take-over-an-abandoned-run.md)).
+- A message in the poison queue is kept for 30 days. To try it again, fix the cause and move it back to its queue with Storage Explorer's **Move**.
+- The run stops when the queue is empty, or when less than 15 minutes is left of its 50-minute budget, leaving the rest of the messages for the next run.
+
 ## Known limitations
+
+The queue loop:
+
+- In Azure, a scan that crashes is tried again only when its message reappears, about 65 minutes later. For "Scan now", the dashboard shows the run as `Failed` on the next pick-up, and the user can click again.
+- A skipped request is not kept. If the scan it gave way to then fails, the repository waits for the next night or another "Scan now".
+- Two runs that check the same repository at the same instant can both scan it. Its findings are not duplicated, but there are two scan runs ([ADR-027](docs/adr/ADR-027-skip-a-repository-being-scanned-take-over-an-abandoned-run.md)).
+- A message the scanner cannot read shows only in the log and the poison queue, not in the dashboard.
+- A repository renamed since its message was sent is looked for under its old name; the next nightly message has the new one.
+- Until Issue 8, queue mode scans local folders only, so `repositoryName` must be a folder in `LocalRoot`.
 
 The package scanner:
 
@@ -197,9 +286,9 @@ The Container Apps Job reads the exit code to decide whether an execution succee
 
 | Code | Meaning |
 |---|---|
-| `0` | Success, or nothing to do. Also a run in which some scanners failed: it is saved as `PartiallyCompleted` and logged as a warning |
-| `1` | Unexpected failure during the run, or every scanner failed (logged with the full exception) |
-| `2` | Invalid configuration, or a `--path` that does not name an existing folder: the scanner did not start (logged as one line saying what is wrong) |
+| `0` | Success, or nothing to do. Also a run in which some scanners failed: it is saved as `PartiallyCompleted` and logged as a warning. In queue mode, also a run in which some repositories failed: each is saved as a `Failed` scan run and its message is tried again |
+| `1` | Unexpected failure during the run, logged with the full exception. With `--path`, also when every scanner failed. In queue mode, also when the queue or the database cannot be reached, or the run is stopped (Ctrl+C, or Azure stopping the job) |
+| `2` | Invalid configuration, a `--path` that does not name an existing folder, or a queue or poison queue that does not exist: logged as one line saying what is wrong, listing every setting that is wrong when there are several |
 
 To see exit code 2 locally, run without the Development settings:
 
@@ -217,6 +306,8 @@ Directory.Packages.props  every NuGet package version, set once (Central Package
 .config/
   dotnet-tools.json       pins the dotnet ef tool version
 RepoScanner.sln           solution file
+scripts/
+  enqueue-local.ps1       puts a scan request on a queue in local Azurite, creating the queues first if needed
 docs/
   adr/                    architecture decision records (index in docs/adr/README.md)
   design/                 design documents, one per issue
