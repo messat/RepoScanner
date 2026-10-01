@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,8 +18,10 @@ using RepoScanner.Scanner.Configuration;
 using RepoScanner.Scanner.Files;
 using RepoScanner.Scanner.Local;
 using RepoScanner.Scanner.Packages;
+using RepoScanner.Scanner.Queue;
 using RepoScanner.Scanner.Secrets;
 using RepoScanner.Scanner.Secrets.Rules;
+using RepoScanner.Scanner.Sources;
 using Serilog;
 using Serilog.Events;
 
@@ -97,6 +101,21 @@ namespace RepoScanner.Scanner
             {
                 // A settings problem is fixed by changing settings, not code: list what is wrong, no stack trace
                 Log.Fatal("Invalid configuration, scanner not started: {ValidationFailures}", exception.Failures);
+                return ExitCodes.InvalidConfiguration;
+            }
+            catch (AggregateException exception) when (exception.InnerExceptions.All(inner => inner is OptionsValidationException))
+            {
+                // Each settings group is checked on its own, so with more than one wrong, as on a new machine without
+                // the database connection string or LocalRoot, the host reports them together: still one line, exit 2
+                IEnumerable<string> failures = exception.InnerExceptions.Cast<OptionsValidationException>().SelectMany(inner => inner.Failures);
+                Log.Fatal("Invalid configuration, scanner not started: {ValidationFailures}", failures);
+                return ExitCodes.InvalidConfiguration;
+            }
+            catch (ScanQueueNotFoundException exception)
+            {
+                // A missing queue is fixed by creating it or correcting its name, like any setting (Issue 7 design,
+                // decision 18): one line naming it, no stack trace
+                Log.Fatal("Queue missing, scanner stopped: {Problem}", exception.Message);
                 return ExitCodes.InvalidConfiguration;
             }
             catch (Exception exception)
@@ -191,6 +210,13 @@ namespace RepoScanner.Scanner
             builder.Services.AddSingleton<ICodePatternRule, Cp006EmptyCatchRule>();
             builder.Services.AddSingleton<IScanner, CodePatternScanner>();
 
+            // Scans one repository and saves it, for --path and the queue loop alike (#31). Scoped, because it
+            // uses the scoped repositories.
+            builder.Services.AddScoped<RepositoryScanRunner>();
+
+            // The clock behind the time limits, so tests can move it forward instead of waiting
+            builder.Services.AddSingleton(TimeProvider.System);
+
             if (LocalPathArgument.TryGet(args, out _))
             {
                 // Local mode reads no queue, so queue settings are neither registered nor required (#20).
@@ -205,6 +231,32 @@ namespace RepoScanner.Scanner
                     .Bind(builder.Configuration.GetSection(QueueOptions.SectionName))
                     .ValidateDataAnnotations()
                     .ValidateOnStart();
+
+                // The loop's time limits and, for Issue 7, where the repositories' folders are (#31). Queue mode
+                // only, like the queue settings, and checked when the host starts.
+                builder.Services.AddOptions<ExecutionOptions>()
+                    .Bind(builder.Configuration.GetSection(ExecutionOptions.SectionName))
+                    .ValidateDataAnnotations()
+                    .ValidateOnStart();
+                builder.Services.AddOptions<SourceOptions>()
+                    .Bind(builder.Configuration.GetSection(SourceOptions.SectionName))
+                    .ValidateDataAnnotations()
+                    .ValidateOnStart();
+
+                // The lane's queue and its poison queue (#30): Azurite's connection string locally, the job's
+                // managed identity in Azure. Building the clients makes no network call.
+                builder.Services.AddSingleton<IScanQueue>(services =>
+                {
+                    IOptions<QueueOptions> queueOptions = services.GetRequiredService<IOptions<QueueOptions>>();
+                    return new QueueConsumer(
+                        QueueClients.Create(queueOptions.Value, queueOptions.Value.Name),
+                        QueueClients.Create(queueOptions.Value, queueOptions.Value.PoisonQueueName),
+                        queueOptions,
+                        services.GetRequiredService<ILogger<QueueConsumer>>());
+                });
+
+                // A queued repository's code: the folder named after it in Scanner:Source:LocalRoot, until Issue 8 clones it
+                builder.Services.AddSingleton<IRepositorySource, LocalFolderSource>();
 
                 builder.Services.AddSingleton<ScanOrchestrator>();
             }

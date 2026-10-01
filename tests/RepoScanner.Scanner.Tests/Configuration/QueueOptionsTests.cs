@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using RepoScanner.Core.Enums;
 using RepoScanner.Scanner.Configuration;
 
 namespace RepoScanner.Scanner.Tests.Configuration
@@ -38,16 +39,65 @@ namespace RepoScanner.Scanner.Tests.Configuration
             Assert.That(options.PoisonQueueName, Is.EqualTo("scan-custom-poison"));
         }
 
-        // A 60-character queue name is valid, but its default poison queue name (67 characters) is not
+        // Azure queue names are at most 63 characters
         [Test]
-        public void Validate_WhenDefaultPoisonQueueNameIsTooLong_Fails()
+        public void Validate_WhenPoisonQueueNameIsTooLong_Fails()
         {
-            QueueOptions options = new QueueOptions { Name = new string('a', 60), ConnectionString = "UseDevelopmentStorage=true" };
+            QueueOptions options = new QueueOptions { Name = "scan-nightly", ConnectionString = "UseDevelopmentStorage=true", PoisonQueueName = new string('a', 64) };
 
             ValidateOptionsResult result = _validator.Validate(null, options);
 
             Assert.That(result.Failed, Is.True);
             Assert.That(result.FailureMessage, Does.Contain(nameof(QueueOptions.PoisonQueueName)));
+        }
+
+        // Issue 7 design, decision 5: the queue says which lane a scan came from, so only the two lanes are valid
+        [TestCase("scan-weekly")]
+        [TestCase("scan-test")]
+        public void Validate_WithAQueueThatIsNotALane_FailsNamingBothLanes(string name)
+        {
+            QueueOptions options = new QueueOptions { Name = name, ConnectionString = "UseDevelopmentStorage=true" };
+
+            ValidateOptionsResult result = _validator.Validate(null, options);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result.Failed, Is.True);
+                Assert.That(result.FailureMessage, Does.Contain("scan-nightly").And.Contain("scan-ondemand"));
+            }
+        }
+
+        [TestCase("scan-nightly", ScanTrigger.Nightly)]
+        [TestCase("scan-ondemand", ScanTrigger.OnDemand)]
+        public void Trigger_IsTheLaneTheQueueBelongsTo(string name, ScanTrigger expectedTrigger)
+        {
+            QueueOptions options = new QueueOptions { Name = name };
+
+            Assert.That(options.Trigger, Is.EqualTo(expectedTrigger));
+        }
+
+        // Issue 7 design, decision 14: long enough to be noticed; Azure's default is 7 days
+        [Test]
+        public void PoisonMessageTimeToLiveDays_DefaultsToThirty()
+        {
+            QueueOptions options = new QueueOptions();
+
+            Assert.That(options.PoisonMessageTimeToLiveDays, Is.EqualTo(30));
+        }
+
+        [TestCase(0)]
+        [TestCase(366)]
+        public void Validate_WithPoisonMessageTimeToLiveDaysOutOfRange_Fails(int days)
+        {
+            QueueOptions options = new QueueOptions { Name = "scan-nightly", ConnectionString = "UseDevelopmentStorage=true", PoisonMessageTimeToLiveDays = days };
+
+            ValidateOptionsResult result = _validator.Validate(null, options);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result.Failed, Is.True);
+                Assert.That(result.FailureMessage, Does.Contain(nameof(QueueOptions.PoisonMessageTimeToLiveDays)));
+            }
         }
 
         // A missing Name is reported once, not again as an invalid poison queue name

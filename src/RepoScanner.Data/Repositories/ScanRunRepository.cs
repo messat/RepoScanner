@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -74,6 +76,15 @@ namespace RepoScanner.Data.Repositories
             }
 
             await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        // Answered by the (RepositoryId, Status) index, which is there for this question (#33)
+        public async Task<IReadOnlyList<ScanRun>> GetRunningAsync(Guid azureDevOpsId, CancellationToken cancellationToken)
+        {
+            return await _context.ScanRuns
+                .Where(run => run.Repository.AzureDevOpsId == azureDevOpsId && run.Status == ScanRunStatus.Running)
+                .OrderBy(run => run.StartedUtc)
+                .ToListAsync(cancellationToken);
         }
     }
 }

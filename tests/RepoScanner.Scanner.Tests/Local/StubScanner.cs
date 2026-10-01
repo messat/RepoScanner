@@ -7,7 +7,7 @@ using RepoScanner.Core.Scanning;
 
 namespace RepoScanner.Scanner.Tests.Local
 {
-    // A scanner that returns the findings it was given, or fails, so LocalScanRunner can be tested
+    // A scanner that returns the findings it was given, or fails, so RepositoryScanRunner can be tested
     // without reading any files
     internal sealed class StubScanner : IScanner
     {
@@ -34,9 +34,13 @@ namespace RepoScanner.Scanner.Tests.Local
         // Runs as the scan starts, for example to stop the run partway
         public Action? OnScan { get; init; }
 
+        // The folder it was last asked to scan
+        public string? RootPath { get; private set; }
+
         public Task<IReadOnlyList<RawFinding>> ScanAsync(string rootPath, CancellationToken cancellationToken)
         {
             CallCount++;
+            RootPath = rootPath;
             OnScan?.Invoke();
 
             return _failure == null

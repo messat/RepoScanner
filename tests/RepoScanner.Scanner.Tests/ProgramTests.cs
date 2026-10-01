@@ -10,8 +10,12 @@ using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using RepoScanner.Core.Scanning;
 using RepoScanner.Scanner.CodePatterns;
+using RepoScanner.Scanner.Configuration;
 using RepoScanner.Scanner.Local;
+using RepoScanner.Scanner.Queue;
 using RepoScanner.Scanner.Secrets;
+using RepoScanner.Scanner.Sources;
+using RepoScanner.Scanner.Tests.Queue;
 using Serilog.Extensions.Logging;
 
 namespace RepoScanner.Scanner.Tests
@@ -19,13 +23,15 @@ namespace RepoScanner.Scanner.Tests
     [TestFixture]
     public class ProgramTests
     {
-        // Valid settings passed as command-line arguments, the last configuration source to be read.
-        // Nothing connects to the database in queue mode, so its connection string only has to be present.
+        // Valid settings passed as command-line arguments, the last configuration source to be read. The tests that
+        // run the loop give it an empty queue in memory, so nothing connects to the database or to Azurite, and the
+        // connection string only has to be present.
         private static readonly string[] ValidArgs =
         {
-            "--Scanner:Queue:Name", "scan-test",
+            "--Scanner:Queue:Name", "scan-nightly",
             "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
-            "--Scanner:Database:ConnectionString", "Server=unused;Database=unused"
+            "--Scanner:Database:ConnectionString", "Server=unused;Database=unused",
+            "--Scanner:Source:LocalRoot", AppContext.BaseDirectory
         };
 
         // Settings with the required queue Name missing
@@ -36,11 +42,88 @@ namespace RepoScanner.Scanner.Tests
         };
 
         [Test]
-        public async Task Main_WithValidQueueSettings_ReturnsZero()
+        public async Task RunAsync_WithValidQueueSettingsAndAnEmptyQueue_ReturnsZero()
         {
-            int exitCode = await Program.Main(ValidArgs);
+            int exitCode = await Program.RunAsync(ValidArgs, services => services.AddSingleton<IScanQueue>(new FakeScanQueue()));
 
             Assert.That(exitCode, Is.EqualTo(0));
+        }
+
+        // Issue 7 design, decision 18: a missing queue is a settings problem, found on first use: exit 2 and one line
+        [Test]
+        public async Task RunAsync_WhenTheQueueDoesNotExist_ExitsTwoWithOneLineNamingIt()
+        {
+            int exitCode = 0;
+            string output = await ConsoleCapture.RunAsync(async () =>
+            {
+                exitCode = await Program.RunAsync(ValidArgs, services => services.AddSingleton<IScanQueue>(new MissingQueue()));
+            });
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(2));
+                Assert.That(output, Does.Contain("The queue scan-nightly does not exist"));
+                Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
+                Assert.That(output, Does.Not.Contain("   at "), "A missing queue should not print a stack trace");
+            }
+        }
+
+        // With queue, execution, source and database settings now, several can be wrong at once on a new machine.
+        // Each group is checked on its own, so all of them are listed, still in one line with exit 2.
+        [Test]
+        public async Task Main_WithSeveralSettingsMissing_ExitsTwoListingEachInOneLine()
+        {
+            string? database = Environment.GetEnvironmentVariable("Scanner__Database__ConnectionString");
+            string? localRoot = Environment.GetEnvironmentVariable("Scanner__Source__LocalRoot");
+            Environment.SetEnvironmentVariable("Scanner__Database__ConnectionString", null);
+            Environment.SetEnvironmentVariable("Scanner__Source__LocalRoot", null);
+            try
+            {
+                string[] args = { "--Scanner:Queue:Name", "scan-nightly", "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true" };
+                int exitCode = 0;
+                string output = await ConsoleCapture.RunAsync(async () => { exitCode = await Program.Main(args); });
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(exitCode, Is.EqualTo(2));
+                    Assert.That(output, Does.Contain("Scanner:Database:ConnectionString").And.Contain("Scanner:Source:LocalRoot"));
+                    Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
+                    Assert.That(output, Does.Not.Contain("   at "), "A configuration error should not print a stack trace");
+                }
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("Scanner__Database__ConnectionString", database);
+                Environment.SetEnvironmentVariable("Scanner__Source__LocalRoot", localRoot);
+            }
+        }
+
+        // Queue mode's services, as #31 wires them. Building the queue clients makes no network call.
+        [Test]
+        public void CreateBuilder_InQueueMode_RegistersTheLoopTheQueueAndTheLocalFolders()
+        {
+            using (IHost host = Program.CreateBuilder(ValidArgs).Build())
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(host.Services.GetService<ScanOrchestrator>(), Is.Not.Null);
+                Assert.That(host.Services.GetRequiredService<IScanQueue>(), Is.TypeOf<QueueConsumer>());
+                Assert.That(host.Services.GetRequiredService<IRepositorySource>(), Is.TypeOf<LocalFolderSource>());
+            }
+        }
+
+        // Issue 7 design, Settings: 1 minute in Development, so a retry can be watched locally; 65 everywhere else
+        [TestCase("Development", 1)]
+        [TestCase("Production", 65)]
+        public void CreateBuilder_VisibilityTimeout_IsOneMinuteOnlyInDevelopment(string environment, int expectedMinutes)
+        {
+            string[] args = ValidArgs.Concat(new[] { "--environment", environment }).ToArray();
+
+            using (IHost host = Program.CreateBuilder(args).Build())
+            {
+                ExecutionOptions options = host.Services.GetRequiredService<IOptions<ExecutionOptions>>().Value;
+
+                Assert.That(options.VisibilityTimeoutMinutes, Is.EqualTo(expectedMinutes));
+            }
         }
 
         // Issue 1 acceptance criterion: a missing Queue:Name exits 2
@@ -150,6 +233,25 @@ namespace RepoScanner.Scanner.Tests
                 }
 
                 await host.StopAsync();
+            }
+        }
+
+        // A lane queue that Azure says does not exist
+        internal sealed class MissingQueue : IScanQueue
+        {
+            public Task<ScanQueueMessage?> ReceiveAsync(TimeSpan visibilityTimeout, CancellationToken cancellationToken)
+            {
+                throw new ScanQueueNotFoundException("scan-nightly", new InvalidOperationException("QueueNotFound"));
+            }
+
+            public Task DeleteAsync(ScanQueueMessage message, CancellationToken cancellationToken)
+            {
+                return Task.CompletedTask;
+            }
+
+            public Task MoveToPoisonAsync(ScanQueueMessage message, CancellationToken cancellationToken)
+            {
+                return Task.CompletedTask;
             }
         }
 
