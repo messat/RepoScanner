@@ -51,7 +51,7 @@ namespace RepoScanner.Scanner.Queue
                     return false;
                 }
 
-                problem = CheckRepositoryName(repositoryName) ?? CheckDefaultBranch(defaultBranch);
+                problem = CheckProjectName(projectName) ?? CheckRepositoryName(repositoryName) ?? CheckDefaultBranch(defaultBranch);
                 if (problem != null)
                 {
                     return false;
@@ -160,8 +160,16 @@ namespace RepoScanner.Scanner.Queue
             return found;
         }
 
-        // The name becomes a folder under LocalRoot in Issue 7 and part of the clone URL in Issue 8, so a
-        // name such as ..\..\Windows must not reach either
+        // The project becomes part of the clone URL (Issue 8). Git removes . and .. from a URL, so either would take the
+        // clone outside the organisation the PAT is scoped to, where its refusal would read as a rejected PAT and stop
+        // the run (Issue 8 final review). Any other character is escaped in the URL.
+        private static string? CheckProjectName(string projectName)
+        {
+            return projectName == "." || projectName == ".." ? "projectName must not be . or .." : null;
+        }
+
+        // The name becomes part of the clone URL (Issue 8), and was a folder name in Issue 7, so a name such as
+        // ..\..\Windows must never reach it
         private static string? CheckRepositoryName(string repositoryName)
         {
             if (repositoryName == "." || repositoryName == "..")

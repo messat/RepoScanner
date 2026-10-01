@@ -21,7 +21,7 @@ namespace RepoScanner.Scanner
     // one at a time and scans each repository, until the queue is empty or the time budget would not fit another
     // repository. A failed scan leaves its message, to be tried again; a malformed message, or one already tried
     // MaxDequeueCount times, goes to the poison queue. A repository another run is scanning is skipped, and a run
-    // abandoned by one that died is taken over (#33, ADR-027).
+    // abandoned by one that died is taken over (#33, ADR-027). A PAT Azure DevOps refuses stops the run (#37).
     public sealed class ScanOrchestrator
     {
         // A Running scan run this much older than ScanTimeoutPerRepoMinutes has been abandoned (ADR-027)
@@ -81,6 +81,13 @@ namespace RepoScanner.Scanner
                 // Ctrl+C locally, SIGTERM in Azure: the scan that was running is already marked Failed, and its
                 // message is left to be tried again. Program exits with 1.
                 LogStopped("asked to stop", counts);
+                throw;
+            }
+            catch (AzureDevOpsAuthenticationException)
+            {
+                // Every other repository would fail the same way, so the rest of the messages are left for when the PAT
+                // is fixed (Issue 8 design, decision 13). The scan run already says why. Program exits with 1.
+                LogStopped("Azure DevOps refused the token", counts);
                 throw;
             }
 
@@ -196,6 +203,12 @@ namespace RepoScanner.Scanner
                         token => _source.OpenAsync(request, token),
                         _scanTimeout,
                         cancellationToken);
+                }
+                catch (AzureDevOpsAuthenticationException)
+                {
+                    // Not a failed repository but a failed PAT: the run stops (RunAsync), leaving this message too
+                    counts.Failed++;
+                    throw;
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {

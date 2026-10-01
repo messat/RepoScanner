@@ -25,6 +25,9 @@ namespace RepoScanner.Scanner.Tests
         // The runner never reads this folder itself: the stub scanner stands in for the real one
         private static readonly string Folder = Path.Combine(Path.GetTempPath(), "orders-api");
 
+        // A clone's commit ID, as git rev-parse HEAD gives it
+        private const string CommitId = "27487b917ee49183c0c677159a43707cf20a9219";
+
         // The repository the scan is about, as a queue message would describe it
         private static readonly RepositoryDetails Repository = new RepositoryDetails(new Guid("0f8fad5b-d9cb-469f-a165-70867728950e"), "Lumina", "orders-api", "develop");
 
@@ -573,6 +576,9 @@ namespace RepoScanner.Scanner.Tests
                 {
                     Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Failed));
                     Assert.That(run.ErrorMessage, Is.EqualTo(@"No folder named Ghost in C:\repos"));
+
+                    // A clone that failed has no commit ID (ScanRunCompletion: "Empty when the clone failed")
+                    Assert.That(run.CommitSha, Is.Null);
                     Assert.That(scanner.CallCount, Is.Zero);
                 }
             }
@@ -654,6 +660,104 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        // Issue 8 design, The commit ID: once the clone has opened, every way the run ends saves its commit ID
+        [Test]
+        public async Task RunAsync_SavesTheWorkspacesCommitId()
+        {
+            await RunAsync(OpenClone, timeLimit: null, CancellationToken.None, new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")));
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Completed));
+                    Assert.That(run.CommitSha, Is.EqualTo(CommitId));
+                }
+            }
+        }
+
+        [Test]
+        public async Task RunAsync_WhenSomeScannersFail_StillSavesTheCommitId()
+        {
+            await RunAsync(OpenClone, timeLimit: null, CancellationToken.None,
+                new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")), FailingPackageScanner("nuget.org data could not be downloaded"));
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.PartiallyCompleted));
+                    Assert.That(run.CommitSha, Is.EqualTo(CommitId));
+                }
+            }
+        }
+
+        // The clone worked, so the run says which commit the scanners failed on
+        [Test]
+        public async Task RunAsync_WhenEveryScannerFails_SavesTheCommitId()
+        {
+            await Assert.ThatAsync(
+                () => RunAsync(OpenClone, timeLimit: null, CancellationToken.None, new StubScanner(new InvalidOperationException("Simulated failure"))),
+                Throws.InvalidOperationException);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Failed));
+                    Assert.That(run.CommitSha, Is.EqualTo(CommitId));
+                }
+            }
+        }
+
+        [Test]
+        public async Task RunAsync_WhenTheTimeLimitIsReached_SavesTheCommitId()
+        {
+            StubScanner slow = new StubScanner() { OnScan = () => _time.Advance(TimeSpan.FromMinutes(15)) };
+
+            await Assert.ThatAsync(() => RunAsync(OpenClone, TimeSpan.FromMinutes(15), CancellationToken.None, slow), Throws.TypeOf<TimeoutException>());
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.ErrorMessage, Does.StartWith("The scan took longer than 15 minutes"));
+                    Assert.That(run.CommitSha, Is.EqualTo(CommitId));
+                }
+            }
+        }
+
+        // The job being stopped after the clone is recorded by the other catch, which must save it too
+        [Test]
+        public async Task RunAsync_WhenTheRunIsCancelledAfterTheClone_SavesTheCommitId()
+        {
+            using (CancellationTokenSource stopping = new CancellationTokenSource())
+            {
+                StubScanner cancelled = new StubScanner(new OperationCanceledException(stopping.Token)) { OnScan = stopping.Cancel };
+
+                await Assert.ThatAsync(() => RunAsync(OpenClone, timeLimit: null, stopping.Token, cancelled), Throws.InstanceOf<OperationCanceledException>());
+            }
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun run = context.ScanRuns.Single();
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Failed));
+                    Assert.That(run.CommitSha, Is.EqualTo(CommitId));
+                }
+            }
+        }
+
         private Task RunAsync(params IScanner[] scanners)
         {
             return RunAsync(CancellationToken.None, scanners);
@@ -680,10 +784,16 @@ namespace RepoScanner.Scanner.Tests
             return Task.FromResult(RepositoryWorkspace.ForExistingFolder(Folder));
         }
 
+        // A cloned workspace, as AzureDevOpsCloneSource opens it, with its commit ID
+        private static Task<RepositoryWorkspace> OpenClone(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new RepositoryWorkspace(Folder, CommitId, () => ValueTask.CompletedTask));
+        }
+
         // A workspace whose clean-up only counts, as Issue 8's will delete the clone
         private static RepositoryWorkspace WorkspaceThatCounts(Action onClose)
         {
-            return new RepositoryWorkspace(Folder, () =>
+            return new RepositoryWorkspace(Folder, commitSha: null, () =>
             {
                 onClose();
                 return ValueTask.CompletedTask;

@@ -22,7 +22,9 @@ namespace RepoScanner.Scanner.Tests.Configuration
         {
             "--Scanner:Queue:Name", "scan-nightly",
             "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
-            "--Scanner:Source:LocalRoot", AppContext.BaseDirectory
+            "--Scanner:AzureDevOps:OrganizationUrl", "https://dev.azure.com/example",
+            // A fake PAT: values starting "your-" are placeholders to RepoScanner's own self-scan
+            "--Scanner:AzureDevOps:Pat", "your-test-pat-0001"
         };
 
         // The developer's own variable (README: Database and migrations) is removed for each test and

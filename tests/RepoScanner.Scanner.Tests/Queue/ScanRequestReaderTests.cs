@@ -156,6 +156,15 @@ namespace RepoScanner.Scanner.Tests.Queue
             AssertMalformed(MessageWith("repositoryName", json), expectedProblem);
         }
 
+        // Issue 8 final review: git removes . and .. from a URL, so a project named .. would take the clone outside the
+        // organisation the PAT is scoped to, and its refusal would read as a rejected PAT that stops the run
+        [TestCase("\".\"")]
+        [TestCase("\"..\"")]
+        public void TryRead_WithAProjectNameOfOneOrTwoDots_SaysWhy(string json)
+        {
+            AssertMalformed(MessageWith("projectName", json), "projectName must not be . or ..");
+        }
+
         [TestCase("Repo.Scanner")]
         [TestCase("My Repo")]
         [TestCase("repo-1_final")]

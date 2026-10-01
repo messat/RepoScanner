@@ -16,6 +16,7 @@ using RepoScanner.Scanner.CodePatterns;
 using RepoScanner.Scanner.CodePatterns.Rules;
 using RepoScanner.Scanner.Configuration;
 using RepoScanner.Scanner.Files;
+using RepoScanner.Scanner.Git;
 using RepoScanner.Scanner.Local;
 using RepoScanner.Scanner.Packages;
 using RepoScanner.Scanner.Queue;
@@ -106,7 +107,7 @@ namespace RepoScanner.Scanner
             catch (AggregateException exception) when (exception.InnerExceptions.All(inner => inner is OptionsValidationException))
             {
                 // Each settings group is checked on its own, so with more than one wrong, as on a new machine without
-                // the database connection string or LocalRoot, the host reports them together: still one line, exit 2
+                // the database connection string or the PAT, the host reports them together: still one line, exit 2
                 IEnumerable<string> failures = exception.InnerExceptions.Cast<OptionsValidationException>().SelectMany(inner => inner.Failures);
                 Log.Fatal("Invalid configuration, scanner not started: {ValidationFailures}", failures);
                 return ExitCodes.InvalidConfiguration;
@@ -117,6 +118,13 @@ namespace RepoScanner.Scanner
                 // decision 18): one line naming it, no stack trace
                 Log.Fatal("Queue missing, scanner stopped: {Problem}", exception.Message);
                 return ExitCodes.InvalidConfiguration;
+            }
+            catch (AzureDevOpsAuthenticationException exception)
+            {
+                // Every repository would fail the same way, so the run stopped, leaving the messages (Issue 8 design,
+                // decision 13). Fixed by renewing the PAT, not code: one line saying so, no stack trace.
+                Log.Fatal("Azure DevOps refused the token, scanner stopped: {Problem}", exception.Message);
+                return ExitCodes.Failure;
             }
             catch (Exception exception)
             {
@@ -232,14 +240,14 @@ namespace RepoScanner.Scanner
                     .ValidateDataAnnotations()
                     .ValidateOnStart();
 
-                // The loop's time limits and, for Issue 7, where the repositories' folders are (#31). Queue mode
-                // only, like the queue settings, and checked when the host starts.
+                // The loop's time limits (#31) and where repositories are cloned from (#37). Queue mode only, like the
+                // queue settings, and checked when the host starts.
                 builder.Services.AddOptions<ExecutionOptions>()
                     .Bind(builder.Configuration.GetSection(ExecutionOptions.SectionName))
                     .ValidateDataAnnotations()
                     .ValidateOnStart();
-                builder.Services.AddOptions<SourceOptions>()
-                    .Bind(builder.Configuration.GetSection(SourceOptions.SectionName))
+                builder.Services.AddOptions<AzureDevOpsOptions>()
+                    .Bind(builder.Configuration.GetSection(AzureDevOpsOptions.SectionName))
                     .ValidateDataAnnotations()
                     .ValidateOnStart();
 
@@ -255,8 +263,12 @@ namespace RepoScanner.Scanner
                         services.GetRequiredService<ILogger<QueueConsumer>>());
                 });
 
-                // A queued repository's code: the folder named after it in Scanner:Source:LocalRoot, until Issue 8 clones it
-                builder.Services.AddSingleton<IRepositorySource, LocalFolderSource>();
+                // A queued repository's code: a shallow clone from Azure DevOps into a new folder under the temporary
+                // directory, the replica's own disk in Azure (#37, ADR-016). Singletons: none keeps anything between clones.
+                builder.Services.AddSingleton<GitProcess>();
+                builder.Services.AddSingleton(services => new WorkspaceFolders(
+                    Path.Combine(Path.GetTempPath(), "reposcanner"), services.GetRequiredService<ILogger<WorkspaceFolders>>()));
+                builder.Services.AddSingleton<IRepositorySource, AzureDevOpsCloneSource>();
 
                 builder.Services.AddSingleton<ScanOrchestrator>();
             }
