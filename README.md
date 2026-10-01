@@ -223,6 +223,7 @@ With the script, which needs the Azure CLI:
 - `-Malformed` sends `{ "hello": 1 }`, to try the poison queue.
 - `-ProjectName` and `-DefaultBranch` default to `Kudos Wall` and `main`, where `victim-repo` is.
 - The repository's Azure DevOps ID is made from its project and name, so the same repository always lands on the same `Repositories` row. `-RepositoryId <guid>` uses another, such as the real one, as the enqueuer will send it: `az repos show --org https://dev.azure.com/BlacklightInternalsMo --project "Kudos Wall" --repository victim-repo --query id -o tsv`. A different ID is a different `Repositories` row, so the same findings then appear under both.
+- `-CorrelationId <guid>` sets the message's correlation ID, which its scan run keeps; a new one by default. `test-container.ps1` uses it to find its scan run.
 - If PowerShell refuses to run scripts, run it as `powershell -ExecutionPolicy Bypass -File scripts\enqueue-local.ps1 -RepositoryName victim-repo`.
 
 Or by hand in Storage Explorer: open the queue, **Add Message**, paste the message, and untick **Encode message body in Base64**, or the scanner cannot read it:
@@ -293,6 +294,22 @@ docker run --rm --env-file .env reposcanner:v1
 - The scanner runs as it does in Azure: the `Production` environment, as the non-root user `app`, with every setting from `.env`. `--rm` deletes the stopped container.
 - The exit code is the scanner's (see [Exit codes](#exit-codes)).
 - With no Development settings, a failed scan's message reappears after 65 minutes, not 1. Add `Scanner__Execution__VisibilityTimeoutMinutes=1` to `.env` to change that.
+
+### Check it end to end
+
+```bash
+.\scripts\test-container.ps1
+```
+
+It stops at the first check that fails, says what to start or fix, and exits 1; it exits 0 when all 13 pass:
+
+- **`.env`:** every line is `NAME=value`, with no quotes, no `<...>` placeholder left and all five settings there. A problem is named by its line and setting, never its value.
+- **The image:** it builds as `reposcanner:v1`, runs as a non-root user, has git 2.31 or later, no .NET SDK and no Development settings, and every base image in the Dockerfile has a tag other than `latest`.
+- **The connections:** a container reaches SQL Server on `host.docker.internal:1433` and Azurite on `host.docker.internal:10001`.
+- **A real scan:** it sends a request for `victim-repo` with its own correlation ID, runs the container, and checks that scan run is `Completed` or `PartiallyCompleted` with a commit ID. Messages already on `scan-nightly` are scanned too.
+- **An empty queue:** a second run exits 0 and saves no scan run.
+
+`-RepositoryName`, `-Tag`, `-SqlServer` and `-EnvFile` change what it uses. It needs Docker Desktop, Azurite and SQL Server running, and reads the scan runs with Windows authentication.
 
 ## Known limitations
 
@@ -381,6 +398,7 @@ Dockerfile                the scanner image: built with the .NET SDK, shipped on
 RepoScanner.sln           solution file
 scripts/
   enqueue-local.ps1       puts a scan request on a queue in local Azurite, creating the queues first if needed
+  test-container.ps1      builds the scanner image and checks it, its connections and a real scan end to end
 docs/
   adr/                    architecture decision records (index in docs/adr/README.md)
   design/                 design documents, one per issue

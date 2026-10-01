@@ -32,6 +32,10 @@
 
         az repos show --org https://dev.azure.com/BlacklightInternalsMo --project "Kudos Wall" --repository victim-repo --query id -o tsv
 
+.PARAMETER CorrelationId
+    The message's correlation ID, which its scan run keeps. A new GUID by default; test-container.ps1 sets it to find
+    the scan run (Issue 9).
+
 .PARAMETER Malformed
     Sends { "hello": 1 } instead, which the scanner moves straight to the lane's poison queue.
 
@@ -67,6 +71,9 @@ param(
 
     [Parameter(ParameterSetName = 'Request')]
     [guid] $RepositoryId = [guid]::Empty,
+
+    [Parameter(ParameterSetName = 'Request')]
+    [guid] $CorrelationId = [guid]::Empty,
 
     [Parameter(Mandatory = $true, ParameterSetName = 'Malformed')]
     [switch] $Malformed,
@@ -115,9 +122,14 @@ else {
         $RepositoryId = [guid]::new([byte[]] $hash[0..15])
     }
 
+    # A new one for each message unless one is given, as the enqueuer makes one per request
+    if ($CorrelationId -eq [guid]::Empty) {
+        $CorrelationId = [guid]::NewGuid()
+    }
+
     $request = [ordered]@{
         schemaVersion  = 1
-        correlationId  = [guid]::NewGuid().ToString()
+        correlationId  = $CorrelationId.ToString()
         repositoryId   = $RepositoryId.ToString()
         projectName    = $ProjectName
         repositoryName = $RepositoryName
