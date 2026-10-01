@@ -311,6 +311,26 @@ It stops at the first check that fails, says what to start or fix, and exits 1; 
 
 `-RepositoryName`, `-Tag`, `-SqlServer` and `-EnvFile` change what it uses. It needs Docker Desktop, Azurite and SQL Server running, and reads the scan runs with Windows authentication.
 
+### Image size and caching
+
+Measured on 2026-10-01 with Docker Desktop 29. Content size is what a registry stores and a machine downloads; disk usage is the image unpacked.
+
+| Image | Content size | Disk usage |
+|---|---|---|
+| `reposcanner:v1` | 141 MB | 543 MB |
+| `mcr.microsoft.com/dotnet/runtime:10.0`, its base | 83.2 MB | 300 MB |
+| `mcr.microsoft.com/dotnet/sdk:10.0`, used only to build | 351 MB | 1.3 GB |
+
+On top of the runtime, the image adds git and its packages (79 MB unpacked) and the published scanner (106 MB unpacked, most of it Roslyn, EF Core and the Azure SDK). Shipping the runtime rather than the SDK keeps it at less than half the SDK's size.
+
+| Build | Time |
+|---|---|
+| With no cache (`docker build --no-cache`) | 27 s: restoring packages 14 s and installing git 17 s, side by side, then publishing 6 s |
+| After changing one `.cs` file | 13 s: only `COPY src/`, the publish and the final copy run |
+| With nothing changed | 2 s |
+
+The project files are copied and restored before the code, so the restore step stays `CACHED` until a project file or package version changes; installing git is `CACHED` until the runtime image changes.
+
 ## Known limitations
 
 The queue loop:
