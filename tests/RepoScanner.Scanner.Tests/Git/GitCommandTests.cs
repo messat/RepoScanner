@@ -68,6 +68,22 @@ namespace RepoScanner.Scanner.Tests.Git
             }
         }
 
+        // The commit ID the clone got (#38): no network, so no PAT, and prompts off like every command
+        [Test]
+        public void RevParseHead_HasTheArgumentsOfTheDesign()
+        {
+            GitCommand command = GitCommand.RevParseHead(Folder);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(command.Name, Is.EqualTo("rev-parse"));
+                Assert.That(command.Arguments, Is.EqualTo(new string[] { "-C", Folder, "rev-parse", "HEAD" }));
+                Assert.That(command.Secrets, Is.Empty);
+                Assert.That(command.Environment["GIT_TERMINAL_PROMPT"], Is.EqualTo("0"));
+                Assert.That(command.Environment["GCM_INTERACTIVE"], Is.EqualTo("never"));
+            }
+        }
+
         // A command in a log line or an exception must not print the environment, which holds the PAT
         [Test]
         public void ToString_ShowsNoSecrets()

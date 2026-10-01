@@ -10,18 +10,22 @@ namespace RepoScanner.Scanner.Sources
     {
         private readonly Func<ValueTask> _cleanUp;
 
-        public RepositoryWorkspace(string folder, Func<ValueTask> cleanUp)
+        public RepositoryWorkspace(string folder, string? commitSha, Func<ValueTask> cleanUp)
         {
             Folder = folder;
+            CommitSha = commitSha;
             _cleanUp = cleanUp;
         }
 
         public string Folder { get; }
 
-        // A folder that stays where it is after the scan: --path, and queue mode's local folders in Issue 7
+        // The commit the clone got, saved as ScanRun.CommitSha (#38); null for a folder that was not cloned
+        public string? CommitSha { get; }
+
+        // A folder that stays where it is after the scan, with no commit ID: --path
         public static RepositoryWorkspace ForExistingFolder(string folder)
         {
-            return new RepositoryWorkspace(folder, () => ValueTask.CompletedTask);
+            return new RepositoryWorkspace(folder, commitSha: null, () => ValueTask.CompletedTask);
         }
 
         public ValueTask DisposeAsync()

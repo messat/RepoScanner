@@ -18,6 +18,9 @@ namespace RepoScanner.Scanner.Sources
     {
         private const long BytesPerMegabyte = 1024 * 1024;
 
+        // A SHA-1 commit ID in hexadecimal
+        private const int CommitIdLength = 40;
+
         // What git prints when Azure DevOps refuses the PAT. With prompts and sign-in helpers off it cannot ask for
         // another login, so it says "terminal prompts disabled" (checked against Azure DevOps on 2026-10-01); the others
         // are its other wordings for the same refusal.
@@ -51,14 +54,17 @@ namespace RepoScanner.Scanner.Sources
 
                 await CloneAsync(url, request.DefaultBranch, folder, cancellationToken);
 
+                // Which commit was scanned, saved as ScanRun.CommitSha (#38)
+                string commitSha = ParseCommitId(await _git.RunAsync(GitCommand.RevParseHead(folder), cancellationToken));
+
                 // ADR-016 asks for the free space before and after: the replica's disk is about 2 GiB
                 _logger.LogInformation(
-                    "Cloned {ProjectName}/{RepositoryName} {Branch} in {DurationMs} ms; {FreeMegabytes} MB free on {Drive}, {FreeMegabytesBefore} before",
-                    request.ProjectName, request.RepositoryName, request.DefaultBranch, duration.ElapsedMilliseconds,
+                    "Cloned {ProjectName}/{RepositoryName} {Branch} at {CommitSha} in {DurationMs} ms; {FreeMegabytes} MB free on {Drive}, {FreeMegabytesBefore} before",
+                    request.ProjectName, request.RepositoryName, request.DefaultBranch, commitSha, duration.ElapsedMilliseconds,
                     FreeMegabytes(folder), Path.GetPathRoot(folder), freeBefore);
 
                 // Closed by RepositoryScanRunner however the scan ends, which deletes the clone (success criterion 3)
-                return new RepositoryWorkspace(folder, () =>
+                return new RepositoryWorkspace(folder, commitSha, () =>
                 {
                     _folders.Delete(folder);
                     return ValueTask.CompletedTask;
@@ -76,6 +82,19 @@ namespace RepoScanner.Scanner.Sources
         internal static bool IsRejectedToken(string standardError)
         {
             return RejectedTokenMarkers.Any(marker => standardError.Contains(marker, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // git rev-parse HEAD's answer: 40 lower-case hexadecimal characters, since Azure DevOps uses SHA-1 and
+        // ScanRun.CommitSha is varchar(40). Anything else means something is badly wrong, so the scan does not go on.
+        internal static string ParseCommitId(string output)
+        {
+            string commitId = output.Trim();
+            if (commitId.Length != CommitIdLength || !commitId.All(char.IsAsciiHexDigitLower))
+            {
+                throw new InvalidOperationException("git rev-parse HEAD gave an unexpected commit ID");
+            }
+
+            return commitId;
         }
 
         private async Task CloneAsync(string url, string branch, string folder, CancellationToken cancellationToken)

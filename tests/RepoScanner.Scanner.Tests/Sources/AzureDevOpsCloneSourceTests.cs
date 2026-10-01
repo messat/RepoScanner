@@ -251,8 +251,52 @@ namespace RepoScanner.Scanner.Tests.Sources
                 .OpenAsync(Request("Kudos Wall", "victim-repo", "main"), CancellationToken.None))
             {
                 Assert.That(_logger.Collector.GetSnapshot().Select(record => record.Message),
-                    Has.One.StartsWith("Cloned Kudos Wall/victim-repo main in ").And.Contain(" MB free on "));
+                    Has.One.StartsWith("Cloned Kudos Wall/victim-repo main at ").And.Contain(" MB free on "));
             }
+        }
+
+        // #38: the commit the clone got, which RepositoryScanRunner saves as ScanRun.CommitSha
+        [Test]
+        public async Task OpenAsync_GivesTheCommitIdOfTheBranchHead()
+        {
+            string commitId = CreateVictimRepo();
+
+            await using (RepositoryWorkspace workspace = await Source(BareRepository.OrganizationUrl(_repos.FullPath))
+                .OpenAsync(Request("Kudos Wall", "victim-repo", "main"), CancellationToken.None))
+            {
+                Assert.That(workspace.CommitSha, Is.EqualTo(commitId));
+            }
+        }
+
+        [Test]
+        public async Task OpenAsync_LogsTheCommitId()
+        {
+            string commitId = CreateVictimRepo();
+
+            await using (RepositoryWorkspace workspace = await Source(BareRepository.OrganizationUrl(_repos.FullPath))
+                .OpenAsync(Request("Kudos Wall", "victim-repo", "main"), CancellationToken.None))
+            {
+                Assert.That(_logger.Collector.GetSnapshot().Select(record => record.Message),
+                    Has.One.StartsWith("Cloned Kudos Wall/victim-repo main at " + commitId + " in "));
+            }
+        }
+
+        [Test]
+        public void ParseCommitId_GivesTheTrimmedId()
+        {
+            Assert.That(AzureDevOpsCloneSource.ParseCommitId("27487b917ee49183c0c677159a43707cf20a9219\n"), Is.EqualTo("27487b917ee49183c0c677159a43707cf20a9219"));
+        }
+
+        // ScanRun.CommitSha is varchar(40), and Azure DevOps uses SHA-1: anything else means something is badly wrong
+        [TestCase("")]
+        [TestCase("fatal: not a git repository")]
+        // SHA-256, which does not fit varchar(40)
+        [TestCase("6f1ed002ab5595859014ebf0951522d9e1b1f6b3c3f7a4c3c1f1e0c8f1b2a3d4")]
+        public void ParseCommitId_ForAnythingButFortyHexCharacters_Throws(string output)
+        {
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => AzureDevOpsCloneSource.ParseCommitId(output));
+
+            Assert.That(exception.Message, Is.EqualTo("git rev-parse HEAD gave an unexpected commit ID"));
         }
 
         // Checked on 2026-10-01 against Azure DevOps with a fake token: the first is what git printed
@@ -267,11 +311,12 @@ namespace RepoScanner.Scanner.Tests.Sources
             Assert.That(AzureDevOpsCloneSource.IsRejectedToken(standardError), Is.EqualTo(expected));
         }
 
-        // victim-repo in Kudos Wall, as in BlacklightInternalsMo: a README.md on main, after a first commit
-        private void CreateVictimRepo()
+        // victim-repo in Kudos Wall, as in BlacklightInternalsMo: a README.md on main, after a first commit. Returns the
+        // commit ID a clone of main gets.
+        private string CreateVictimRepo()
         {
             string content = _temp.WriteText("content/README.md", "second commit");
-            BareRepository.Create(_repos.FullPath, "Kudos Wall", "victim-repo", "main", Path.GetDirectoryName(content)!);
+            return BareRepository.Create(_repos.FullPath, "Kudos Wall", "victim-repo", "main", Path.GetDirectoryName(content)!);
         }
 
         private AzureDevOpsCloneSource Source(string organizationUrl)

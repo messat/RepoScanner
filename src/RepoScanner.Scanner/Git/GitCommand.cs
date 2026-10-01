@@ -57,6 +57,13 @@ namespace RepoScanner.Scanner.Git
             return new GitCommand("clone", arguments, environment, new string[] { pat, credential });
         }
 
+        // The commit a clone got (#38). -C runs it in the clone without changing this process's folder. It reads the
+        // clone on disk, so it needs no PAT.
+        public static GitCommand RevParseHead(string folder)
+        {
+            return new GitCommand("rev-parse", new string[] { "-C", folder, "rev-parse", "HEAD" }, NoPrompts(), Array.Empty<string>());
+        }
+
         // The arguments only, never the environment, which holds the PAT
         public override string ToString()
         {
