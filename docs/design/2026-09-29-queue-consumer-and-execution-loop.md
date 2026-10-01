@@ -236,7 +236,7 @@ namespace RepoScanner.Scanner.Sources
 8. Saved: delete the message. Failed: log a warning with the repository, message ID and attempt, and leave the message.
 9. Go back to 2.
 
-When it stops, it logs one line saying why (`queue empty`, `time budget spent` or `stopping`) with how many messages were scanned, failed, skipped and poisoned. The fuller run summary is Issue 10.
+When it stops, it logs one line saying why (`queue empty`, `time budget spent` or `asked to stop`) with how many messages were scanned, failed and poisoned; #33 adds how many were skipped. The fuller run summary is Issue 10.
 
 - Messages are worked on one after another; only one repository is scanned at a time in a run. With `maxExecutions` 1 (ADR-012) there is one run at a time.
 - A database error in steps 5 or 6 stops the run with exit 1, leaving the message: every other message would fail the same way.

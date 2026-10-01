@@ -21,7 +21,8 @@ namespace RepoScanner.Scanner.Tests.Configuration
         private static readonly string[] QueueArgs =
         {
             "--Scanner:Queue:Name", "scan-nightly",
-            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true"
+            "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
+            "--Scanner:Source:LocalRoot", AppContext.BaseDirectory
         };
 
         // The developer's own variable (README: Database and migrations) is removed for each test and
