@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using RepoScanner.Core.Entities;
@@ -21,5 +22,9 @@ namespace RepoScanner.Core.Persistence
 
         // Records how the run ended and each scanner's result, saved together or not at all
         Task CompleteRunAsync(int scanRunId, ScanRunCompletion completion, CancellationToken cancellationToken);
+
+        // The repository's Running scan runs, oldest first, matched on AzureDevOpsId: empty when it is not being
+        // scanned, or not stored yet. The queue loop skips or takes over on these (#33, ADR-027).
+        Task<IReadOnlyList<ScanRun>> GetRunningAsync(Guid azureDevOpsId, CancellationToken cancellationToken);
     }
 }

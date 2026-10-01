@@ -31,6 +31,8 @@ namespace RepoScanner.Scanner.Tests
     [TestFixture]
     public class ScanOrchestratorTests
     {
+        private static readonly Guid OrdersApiId = new Guid("0f8fad5b-d9cb-469f-a165-70867728950e");
+
         private SqliteTestDatabase _database = null!;
         private TempFolder _root = null!;
         private FakeScanQueue _queue = null!;
@@ -44,7 +46,9 @@ namespace RepoScanner.Scanner.Tests
             _database = new SqliteTestDatabase();
             _root = new TempFolder();
             _queue = new FakeScanQueue();
-            _time = new FakeTimeProvider();
+
+            // Starts at a real date, so the ages of seeded Running runs read like the real thing
+            _time = new FakeTimeProvider(new DateTimeOffset(2026, 10, 1, 2, 0, 0, TimeSpan.Zero));
             _logger = new FakeLogger<ScanOrchestrator>();
         }
 
@@ -329,9 +333,159 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        // Issue 7 success criterion 4 and ADR-027: another run is scanning this repository, so the message is deleted
+        // and logged as skipped. 20 minutes (ScanTimeoutPerRepoMinutes + 5) is still live.
+        [Test]
+        public async Task RunAsync_WhenTheRepositoryIsBeingScanned_DeletesTheMessageAndLogsSkipped()
+        {
+            CreateRepositoryFolder("orders-api");
+            int running = SeedRunningRun(OrdersApiId, startedAgo: TimeSpan.FromMinutes(20));
+            ScanQueueMessage message = _queue.Add(Body("orders-api", OrdersApiId));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            FakeLogRecord skipped = _logger.Collector.GetSnapshot().Single(record => record.Message.StartsWith("Skipped", StringComparison.Ordinal));
+            using (ScannerDbContext context = _database.CreateContext())
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(_queue.Deleted, Is.EqualTo(new[] { message }));
+                Assert.That(context.ScanRuns.Count(), Is.EqualTo(1), "no new scan run");
+                Assert.That(context.ScanRuns.Single().Status, Is.EqualTo(ScanRunStatus.Running));
+                Assert.That(scanner.CallCount, Is.Zero);
+                Assert.That(skipped.GetStructuredStateValue("ScanRunId"), Is.EqualTo(running.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                Assert.That(_logger.LatestRecord.GetStructuredStateValue("SkippedCount"), Is.EqualTo("1"));
+            }
+        }
+
+        // Issue 7 success criterion 5 and ADR-027: a live scan is stopped at 15 minutes, so a run Running for more
+        // than 20 must belong to a run that died. It is marked Failed, and the repository is scanned.
+        [Test]
+        public async Task RunAsync_WhenTheRunningScanIsOlderThanTheLimitPlusFive_TakesItOver()
+        {
+            CreateRepositoryFolder("orders-api");
+            int abandoned = SeedRunningRun(OrdersApiId, startedAgo: TimeSpan.FromMinutes(21));
+            ScanQueueMessage message = _queue.Add(Body("orders-api", OrdersApiId));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun old = context.ScanRuns.Single(run => run.Id == abandoned);
+                ScanRun taken = context.ScanRuns.Single(run => run.Id != abandoned);
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(old.Status, Is.EqualTo(ScanRunStatus.Failed));
+                    Assert.That(old.ErrorMessage, Is.EqualTo("Abandoned: still Running more than 20 minutes after it started, so the run that started it had stopped"));
+                    Assert.That(old.CompletedUtc, Is.Not.Null);
+                    Assert.That(taken.Status, Is.EqualTo(ScanRunStatus.Completed));
+                    Assert.That(scanner.CallCount, Is.EqualTo(1));
+                    Assert.That(_queue.Deleted, Is.EqualTo(new[] { message }));
+                }
+            }
+        }
+
+        // The take-over is said in the log too, not only in ScanRuns, so it shows in the console and Log Analytics
+        [Test]
+        public async Task RunAsync_WhenTakingOverAnAbandonedRun_LogsAWarningNamingIt()
+        {
+            CreateRepositoryFolder("orders-api");
+            int abandoned = SeedRunningRun(OrdersApiId, startedAgo: TimeSpan.FromMinutes(30));
+            _queue.Add(Body("orders-api", OrdersApiId));
+
+            await CreateOrchestrator(new StubScanner()).RunAsync(CancellationToken.None);
+
+            FakeLogRecord warning = _logger.Collector.GetSnapshot().Single(record => record.Level == LogLevel.Warning);
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(warning.GetStructuredStateValue("ScanRunId"), Is.EqualTo(abandoned.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                Assert.That(warning.GetStructuredStateValue("RepositoryName"), Is.EqualTo("orders-api"));
+                Assert.That(warning.GetStructuredStateValue("MinutesRunning"), Is.EqualTo("30"));
+                Assert.That(warning.Message, Does.Contain("abandoned").And.Contain("scanning again"));
+            }
+        }
+
+        // One live run is enough to skip, even beside an abandoned one
+        [Test]
+        public async Task RunAsync_WithAnAbandonedAndALiveRunningScan_Skips()
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRunningRun(OrdersApiId, startedAgo: TimeSpan.FromMinutes(70));
+            SeedRunningRun(OrdersApiId, startedAgo: TimeSpan.FromMinutes(5));
+            _queue.Add(Body("orders-api", OrdersApiId));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            Assert.That(scanner.CallCount, Is.Zero);
+        }
+
+        // Another repository being scanned does not matter
+        [Test]
+        public async Task RunAsync_WhenAnotherRepositoryIsBeingScanned_ScansThisOne()
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRunningRun(Guid.NewGuid(), startedAgo: TimeSpan.FromMinutes(1));
+            _queue.Add(Body("orders-api", OrdersApiId));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            Assert.That(scanner.CallCount, Is.EqualTo(1));
+        }
+
+        // Issue 7 design, Poison: a crash leaves its run Running, so on the 4th pick-up that run is marked Failed; a
+        // young Running run belongs to another live run and is left alone
+        [Test]
+        public async Task RunAsync_OnTheFourthPickUp_MarksACrashedRunFailedButLeavesALiveOne()
+        {
+            CreateRepositoryFolder("orders-api");
+            int crashed = SeedRunningRun(OrdersApiId, startedAgo: TimeSpan.FromMinutes(70));
+            int live = SeedRunningRun(OrdersApiId, startedAgo: TimeSpan.FromMinutes(5));
+            ScanQueueMessage message = _queue.Add(Body("orders-api", OrdersApiId), dequeueCount: 4);
+
+            await CreateOrchestrator(new StubScanner()).RunAsync(CancellationToken.None);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun crashedRun = context.ScanRuns.Single(run => run.Id == crashed);
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(_queue.Poisoned, Is.EqualTo(new[] { message }));
+                    Assert.That(crashedRun.Status, Is.EqualTo(ScanRunStatus.Failed));
+                    Assert.That(crashedRun.ErrorMessage, Is.EqualTo("Moved to scan-nightly-poison after 3 attempts"));
+                    Assert.That(context.ScanRuns.Single(run => run.Id == live).Status, Is.EqualTo(ScanRunStatus.Running));
+                }
+            }
+        }
+
+        // Issue 7 design, The loop: with the database out of reach every message would fail the same way, so the run
+        // stops (exit 1) and the message is left to reappear
+        [Test]
+        public async Task RunAsync_WhenTheDatabaseCannotBeReached_StopsAndLeavesTheMessage()
+        {
+            CreateRepositoryFolder("orders-api");
+            _queue.Add(Body("orders-api", OrdersApiId));
+
+            ScanOrchestrator orchestrator = CreateOrchestrator(
+                new StubScanner(), configure: services => services.AddScoped<IScanRunRepository, UnreachableScanRunRepository>());
+
+            await Assert.ThatAsync(() => orchestrator.RunAsync(CancellationToken.None), Throws.InvalidOperationException);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(_queue.Deleted, Is.Empty);
+                Assert.That(_queue.Poisoned, Is.Empty);
+            }
+        }
+
         // The services a message's scan uses, as Program registers them, with the in-memory database and the stub
         // scanner in place of the real ones
-        private ScanOrchestrator CreateOrchestrator(StubScanner scanner, string queueName = "scan-nightly", ExecutionOptions? execution = null)
+        private ScanOrchestrator CreateOrchestrator(
+            StubScanner scanner, string queueName = "scan-nightly", ExecutionOptions? execution = null, Action<IServiceCollection>? configure = null)
         {
             ServiceCollection services = new ServiceCollection();
             services.AddScoped(_ => _database.CreateContext());
@@ -341,6 +495,7 @@ namespace RepoScanner.Scanner.Tests
             services.AddSingleton<TimeProvider>(_time);
             services.AddSingleton<ILogger<RepositoryScanRunner>>(new FakeLogger<RepositoryScanRunner>());
             services.AddScoped<RepositoryScanRunner>();
+            configure?.Invoke(services);
             _services = services.BuildServiceProvider();
 
             return new ScanOrchestrator(
@@ -359,6 +514,27 @@ namespace RepoScanner.Scanner.Tests
             Directory.CreateDirectory(Path.Combine(_root.FullPath, name));
         }
 
+        // A Running scan run, as another run would leave it while scanning, or a crash would leave it for good
+        private int SeedRunningRun(Guid azureDevOpsId, TimeSpan startedAgo)
+        {
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                Repository repository = context.Repositories.SingleOrDefault(stored => stored.AzureDevOpsId == azureDevOpsId)
+                    ?? context.Repositories.Add(new Repository { AzureDevOpsId = azureDevOpsId, ProjectName = "Lumina", Name = "orders-api", DefaultBranch = "develop" }).Entity;
+                ScanRun scanRun = new ScanRun
+                {
+                    Repository = repository,
+                    TriggerType = ScanTrigger.OnDemand,
+                    Status = ScanRunStatus.Running,
+                    CorrelationId = Guid.NewGuid(),
+                    StartedUtc = _time.GetUtcNow().UtcDateTime - startedAgo
+                };
+                context.ScanRuns.Add(scanRun);
+                context.SaveChanges();
+                return scanRun.Id;
+            }
+        }
+
         // A valid message for the repository, in the format of the Issue 7 design
         private static string Body(string repositoryName, Guid? repositoryId = null, Guid? correlationId = null)
         {
@@ -366,6 +542,25 @@ namespace RepoScanner.Scanner.Tests
                 + "\", \"repositoryId\": \"" + (repositoryId ?? Guid.NewGuid())
                 + "\", \"projectName\": \"Lumina\", \"repositoryName\": \"" + repositoryName
                 + "\", \"defaultBranch\": \"develop\"}";
+        }
+
+        // The database out of reach: every call fails, as EF Core does once its retries are spent
+        private sealed class UnreachableScanRunRepository : IScanRunRepository
+        {
+            public Task<ScanRun> StartRunAsync(RepositoryDetails repository, ScanTrigger trigger, Guid correlationId, DateTime startedUtc, CancellationToken cancellationToken)
+            {
+                throw new InvalidOperationException("The database cannot be reached");
+            }
+
+            public Task CompleteRunAsync(int scanRunId, ScanRunCompletion completion, CancellationToken cancellationToken)
+            {
+                throw new InvalidOperationException("The database cannot be reached");
+            }
+
+            public Task<IReadOnlyList<ScanRun>> GetRunningAsync(Guid azureDevOpsId, CancellationToken cancellationToken)
+            {
+                throw new InvalidOperationException("The database cannot be reached");
+            }
         }
 
         private static RawFinding Raw(string ruleId, string filePath, int lineNumber)

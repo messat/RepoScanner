@@ -249,6 +249,51 @@ namespace RepoScanner.Data.Tests.Repositories
             }
         }
 
+        // #33: "is this repository being scanned right now?" Only Running rows, only of that repository, oldest first
+        [Test]
+        public async Task GetRunningAsync_ReturnsOnlyThatRepositorysRunningRunsOldestFirst()
+        {
+            Repository scanned = new Repository { AzureDevOpsId = AzureDevOpsId, ProjectName = "Lumina", Name = "RepoScanner", DefaultBranch = "main" };
+            ScanRun newer = RunStarted(StartedUtc.AddMinutes(30), ScanRunStatus.Running);
+            ScanRun older = RunStarted(StartedUtc, ScanRunStatus.Running);
+            scanned.ScanRuns.Add(newer);
+            scanned.ScanRuns.Add(older);
+            scanned.ScanRuns.Add(RunStarted(StartedUtc, ScanRunStatus.Completed));
+            scanned.ScanRuns.Add(RunStarted(StartedUtc, ScanRunStatus.Failed));
+            scanned.ScanRuns.Add(RunStarted(StartedUtc, ScanRunStatus.PartiallyCompleted));
+            SeedRepository(scanned);
+
+            Repository other = TestEntities.NewRepository();
+            other.ScanRuns.Add(RunStarted(StartedUtc, ScanRunStatus.Running));
+            SeedRepository(other);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                IReadOnlyList<ScanRun> running = await new ScanRunRepository(context).GetRunningAsync(AzureDevOpsId, CancellationToken.None);
+
+                Assert.That(running.Select(run => run.Id), Is.EqualTo(new[] { older.Id, newer.Id }));
+            }
+        }
+
+        [Test]
+        public async Task GetRunningAsync_ForARepositoryNotStoredYet_ReturnsNone()
+        {
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                IReadOnlyList<ScanRun> running = await new ScanRunRepository(context).GetRunningAsync(AzureDevOpsId, CancellationToken.None);
+
+                Assert.That(running, Is.Empty);
+            }
+        }
+
+        private static ScanRun RunStarted(DateTime startedUtc, ScanRunStatus status)
+        {
+            ScanRun scanRun = TestEntities.NewScanRun();
+            scanRun.StartedUtc = startedUtc;
+            scanRun.Status = status;
+            return scanRun;
+        }
+
         private int SeedRepository(Repository repository)
         {
             using (ScannerDbContext context = _database.CreateContext())

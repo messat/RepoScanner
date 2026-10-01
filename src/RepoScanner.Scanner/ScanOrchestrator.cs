@@ -1,11 +1,16 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using RepoScanner.Core.Entities;
 using RepoScanner.Core.Enums;
+using RepoScanner.Core.Persistence;
 using RepoScanner.Scanner.Configuration;
 using RepoScanner.Scanner.Queue;
 using RepoScanner.Scanner.Sources;
@@ -15,15 +20,20 @@ namespace RepoScanner.Scanner
     // Runs one execution of the scanner job (#31, Issue 7 design, The loop): takes messages from the lane's queue
     // one at a time and scans each repository, until the queue is empty or the time budget would not fit another
     // repository. A failed scan leaves its message, to be tried again; a malformed message, or one already tried
-    // MaxDequeueCount times, goes to the poison queue.
+    // MaxDequeueCount times, goes to the poison queue. A repository another run is scanning is skipped, and a run
+    // abandoned by one that died is taken over (#33, ADR-027).
     public sealed class ScanOrchestrator
     {
+        // A Running scan run this much older than ScanTimeoutPerRepoMinutes has been abandoned (ADR-027)
+        private const int AbandonedAfterExtraMinutes = 5;
+
         private readonly ILogger<ScanOrchestrator> _logger;
         private readonly IHostEnvironment _environment;
         private readonly QueueOptions _queueOptions;
         private readonly TimeSpan _budget;
         private readonly TimeSpan _scanTimeout;
         private readonly TimeSpan _visibilityTimeout;
+        private readonly TimeSpan _abandonedAfter;
         private readonly IScanQueue _queue;
         private readonly IRepositorySource _source;
         private readonly IServiceScopeFactory _scopes;
@@ -45,6 +55,9 @@ namespace RepoScanner.Scanner
             _budget = TimeSpan.FromMinutes(executionOptions.Value.MaxRunDurationMinutes);
             _scanTimeout = TimeSpan.FromMinutes(executionOptions.Value.ScanTimeoutPerRepoMinutes);
             _visibilityTimeout = TimeSpan.FromMinutes(executionOptions.Value.VisibilityTimeoutMinutes);
+
+            // The 5 minutes cover saving after a scan stops and small clock differences between machines (ADR-027)
+            _abandonedAfter = _scanTimeout + TimeSpan.FromMinutes(AbandonedAfterExtraMinutes);
             _queue = queue;
             _source = source;
             _scopes = scopes;
@@ -112,25 +125,67 @@ namespace RepoScanner.Scanner
                 return;
             }
 
-            // Tried MaxDequeueCount times already: the failures are in those attempts' scan runs (ADR-013)
-            if (message.DequeueCount > _queueOptions.MaxDequeueCount)
-            {
-                await _queue.MoveToPoisonAsync(message, cancellationToken);
-                _logger.LogWarning(
-                    "Message {MessageId} moved to {PoisonQueueName}: {Reason}, for {ProjectName}/{RepositoryName}, correlation {CorrelationId}, attempt {DequeueCount}",
-                    message.MessageId, _queueOptions.PoisonQueueName, "tried " + _queueOptions.MaxDequeueCount + " times without success",
-                    request.ProjectName, request.RepositoryName, request.CorrelationId, message.DequeueCount);
-                counts.Poisoned++;
-                return;
-            }
-
-            _logger.LogInformation(
-                "Message {MessageId} for {ProjectName}/{RepositoryName}, correlation {CorrelationId}, attempt {DequeueCount}",
-                message.MessageId, request.ProjectName, request.RepositoryName, request.CorrelationId, message.DequeueCount);
-
             // A scope per message, so each repository gets a fresh DbContext
             using (IServiceScope scope = _scopes.CreateScope())
             {
+                IScanRunRepository scanRuns = scope.ServiceProvider.GetRequiredService<IScanRunRepository>();
+
+                // Is the repository being scanned right now (ADR-027)? Not caught: with the database out of reach every
+                // message would fail the same way, so the run stops (exit 1) and the message is left to reappear.
+                IReadOnlyList<ScanRun> running = await scanRuns.GetRunningAsync(request.RepositoryId, cancellationToken);
+                DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
+                List<ScanRun> abandoned = running.Where(run => now - run.StartedUtc > _abandonedAfter).ToList();
+
+                // Tried MaxDequeueCount times already: the failures that threw are in those attempts' scan runs
+                // (ADR-013). A crash left its run Running, so that one is marked Failed here. A younger Running run
+                // belongs to another live run and is left alone.
+                if (message.DequeueCount > _queueOptions.MaxDequeueCount)
+                {
+                    await MarkFailedAsync(
+                        scanRuns, abandoned, "Moved to " + _queueOptions.PoisonQueueName + " after " + _queueOptions.MaxDequeueCount + " attempts", cancellationToken);
+                    await _queue.MoveToPoisonAsync(message, cancellationToken);
+                    _logger.LogWarning(
+                        "Message {MessageId} moved to {PoisonQueueName}: {Reason}, for {ProjectName}/{RepositoryName}, correlation {CorrelationId}, attempt {DequeueCount}",
+                        message.MessageId, _queueOptions.PoisonQueueName, "tried " + _queueOptions.MaxDequeueCount + " times without success",
+                        request.ProjectName, request.RepositoryName, request.CorrelationId, message.DequeueCount);
+                    counts.Poisoned++;
+                    return;
+                }
+
+                // Another run is scanning it: its findings will be as fresh as this scan's, so this request is
+                // deleted rather than kept (ADR-027)
+                ScanRun? live = running.FirstOrDefault(run => now - run.StartedUtc <= _abandonedAfter);
+                if (live != null)
+                {
+                    await _queue.DeleteAsync(message, cancellationToken);
+                    _logger.LogInformation(
+                        "Skipped {ProjectName}/{RepositoryName} from message {MessageId}: scan run {ScanRunId} is already scanning it",
+                        request.ProjectName, request.RepositoryName, message.MessageId, live.Id);
+                    counts.Skipped++;
+                    return;
+                }
+
+                // A live scan is stopped at ScanTimeoutPerRepoMinutes, so a run still Running 5 minutes after that
+                // belongs to a run that died: it is marked Failed, and this run scans the repository (ADR-027)
+                await MarkFailedAsync(
+                    scanRuns,
+                    abandoned,
+                    "Abandoned: still Running more than " + _abandonedAfter.TotalMinutes.ToString(CultureInfo.InvariantCulture)
+                    + " minutes after it started, so the run that started it had stopped",
+                    cancellationToken);
+
+                // Said in the log as well as in ScanRuns, so a take-over shows in the console and Log Analytics
+                foreach (ScanRun run in abandoned)
+                {
+                    _logger.LogWarning(
+                        "Scan run {ScanRunId} for {ProjectName}/{RepositoryName} was abandoned (still Running {MinutesRunning} minutes after it started); marked Failed and scanning again",
+                        run.Id, request.ProjectName, request.RepositoryName, (int)(now - run.StartedUtc).TotalMinutes);
+                }
+
+                _logger.LogInformation(
+                    "Message {MessageId} for {ProjectName}/{RepositoryName}, correlation {CorrelationId}, attempt {DequeueCount}",
+                    message.MessageId, request.ProjectName, request.RepositoryName, request.CorrelationId, message.DequeueCount);
+
                 RepositoryScanRunner runner = scope.ServiceProvider.GetRequiredService<RepositoryScanRunner>();
                 try
                 {
@@ -160,11 +215,22 @@ namespace RepoScanner.Scanner
             counts.Scanned++;
         }
 
+        // Marks scan runs Failed whose run stopped without saving an outcome, so none stays Running for ever (ADR-013)
+        private static async Task MarkFailedAsync(IScanRunRepository scanRuns, IReadOnlyList<ScanRun> runs, string reason, CancellationToken cancellationToken)
+        {
+            foreach (ScanRun run in runs)
+            {
+                ScanRunCompletion completion = new ScanRunCompletion(
+                    ScanRunStatus.Failed, CommitSha: null, DateTime.UtcNow, NewCount: 0, ReopenedCount: 0, ResolvedCount: 0, reason, Array.Empty<ScannerResult>());
+                await scanRuns.CompleteRunAsync(run.Id, completion, cancellationToken);
+            }
+        }
+
         private void LogStopped(string reason, RunCounts counts)
         {
             _logger.LogInformation(
-                "Stopped taking messages from {QueueName}: {Reason}. {ScannedCount} scanned, {FailedCount} failed, {PoisonedCount} poisoned",
-                _queueOptions.Name, reason, counts.Scanned, counts.Failed, counts.Poisoned);
+                "Stopped taking messages from {QueueName}: {Reason}. {ScannedCount} scanned, {FailedCount} failed, {SkippedCount} skipped, {PoisonedCount} poisoned",
+                _queueOptions.Name, reason, counts.Scanned, counts.Failed, counts.Skipped, counts.Poisoned);
         }
 
         // What one execution did, for its last log line
@@ -173,6 +239,8 @@ namespace RepoScanner.Scanner
             public int Scanned { get; set; }
 
             public int Failed { get; set; }
+
+            public int Skipped { get; set; }
 
             public int Poisoned { get; set; }
         }
