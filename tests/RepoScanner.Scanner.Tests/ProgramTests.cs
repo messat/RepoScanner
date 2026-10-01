@@ -15,7 +15,9 @@ using RepoScanner.Scanner.Local;
 using RepoScanner.Scanner.Queue;
 using RepoScanner.Scanner.Secrets;
 using RepoScanner.Scanner.Sources;
+using RepoScanner.Scanner.Tests.Local;
 using RepoScanner.Scanner.Tests.Queue;
+using RepoScanner.Scanner.Tests.Sources;
 using Serilog.Extensions.Logging;
 
 namespace RepoScanner.Scanner.Tests
@@ -31,14 +33,19 @@ namespace RepoScanner.Scanner.Tests
             "--Scanner:Queue:Name", "scan-nightly",
             "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
             "--Scanner:Database:ConnectionString", "Server=unused;Database=unused",
-            "--Scanner:Source:LocalRoot", AppContext.BaseDirectory
+            "--Scanner:AzureDevOps:OrganizationUrl", "https://dev.azure.com/example",
+            // A fake PAT: values starting "your-" are placeholders to RepoScanner's own self-scan
+            "--Scanner:AzureDevOps:Pat", "your-test-pat-0001"
         };
 
-        // Settings with the required queue Name missing
+        // Settings with the required queue Name missing, and only that: every other group is valid, so these tests do not
+        // depend on the developer's own environment variables
         private static readonly string[] ArgsWithoutQueueName =
         {
             "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
-            "--Scanner:Database:ConnectionString", "Server=unused;Database=unused"
+            "--Scanner:Database:ConnectionString", "Server=unused;Database=unused",
+            "--Scanner:AzureDevOps:OrganizationUrl", "https://dev.azure.com/example",
+            "--Scanner:AzureDevOps:Pat", "your-test-pat-0001"
         };
 
         [Test]
@@ -68,15 +75,15 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
-        // With queue, execution, source and database settings now, several can be wrong at once on a new machine.
+        // With queue, execution, Azure DevOps and database settings now, several can be wrong at once on a new machine.
         // Each group is checked on its own, so all of them are listed, still in one line with exit 2.
         [Test]
         public async Task Main_WithSeveralSettingsMissing_ExitsTwoListingEachInOneLine()
         {
             string? database = Environment.GetEnvironmentVariable("Scanner__Database__ConnectionString");
-            string? localRoot = Environment.GetEnvironmentVariable("Scanner__Source__LocalRoot");
+            string? pat = Environment.GetEnvironmentVariable("Scanner__AzureDevOps__Pat");
             Environment.SetEnvironmentVariable("Scanner__Database__ConnectionString", null);
-            Environment.SetEnvironmentVariable("Scanner__Source__LocalRoot", null);
+            Environment.SetEnvironmentVariable("Scanner__AzureDevOps__Pat", null);
             try
             {
                 string[] args = { "--Scanner:Queue:Name", "scan-nightly", "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true" };
@@ -86,7 +93,7 @@ namespace RepoScanner.Scanner.Tests
                 using (Assert.EnterMultipleScope())
                 {
                     Assert.That(exitCode, Is.EqualTo(2));
-                    Assert.That(output, Does.Contain("Scanner:Database:ConnectionString").And.Contain("Scanner:Source:LocalRoot"));
+                    Assert.That(output, Does.Contain("Scanner:Database:ConnectionString").And.Contain("Scanner:AzureDevOps:Pat"));
                     Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
                     Assert.That(output, Does.Not.Contain("   at "), "A configuration error should not print a stack trace");
                 }
@@ -94,20 +101,59 @@ namespace RepoScanner.Scanner.Tests
             finally
             {
                 Environment.SetEnvironmentVariable("Scanner__Database__ConnectionString", database);
-                Environment.SetEnvironmentVariable("Scanner__Source__LocalRoot", localRoot);
+                Environment.SetEnvironmentVariable("Scanner__AzureDevOps__Pat", pat);
             }
         }
 
-        // Queue mode's services, as #31 wires them. Building the queue clients makes no network call.
+        // Queue mode's services, as #31 and #37 wire them. Building the queue clients makes no network call.
         [Test]
-        public void CreateBuilder_InQueueMode_RegistersTheLoopTheQueueAndTheLocalFolders()
+        public void CreateBuilder_InQueueMode_RegistersTheLoopTheQueueAndTheClone()
         {
             using (IHost host = Program.CreateBuilder(ValidArgs).Build())
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(host.Services.GetService<ScanOrchestrator>(), Is.Not.Null);
                 Assert.That(host.Services.GetRequiredService<IScanQueue>(), Is.TypeOf<QueueConsumer>());
-                Assert.That(host.Services.GetRequiredService<IRepositorySource>(), Is.TypeOf<LocalFolderSource>());
+                Assert.That(host.Services.GetRequiredService<IRepositorySource>(), Is.TypeOf<AzureDevOpsCloneSource>());
+            }
+        }
+
+        // Issue 8 design, decision 13: a rejected PAT stops the run with exit 1, like any run that cannot go on, with one
+        // line saying so and no stack trace
+        [Test]
+        public async Task RunAsync_WhenAzureDevOpsRefusesTheToken_ExitsOneWithOneLine()
+        {
+            using (SqliteTestDatabase database = new SqliteTestDatabase())
+            using (TempFolder root = new TempFolder())
+            {
+                FakeScanQueue queue = new FakeScanQueue();
+                queue.Add("{\"schemaVersion\": 1, \"correlationId\": \"" + Guid.NewGuid() + "\", \"repositoryId\": \"" + Guid.NewGuid()
+                    + "\", \"projectName\": \"Kudos Wall\", \"repositoryName\": \"victim-repo\", \"defaultBranch\": \"main\"}");
+                FakeRepositorySource source = new FakeRepositorySource(root.FullPath)
+                {
+                    Failure = new AzureDevOpsAuthenticationException(
+                        "Azure DevOps refused the token in Scanner:AzureDevOps:Pat for https://dev.azure.com/example. Check that it has not expired or been revoked, and that it has Code (Read).",
+                        new InvalidOperationException("git clone failed"))
+                };
+
+                int exitCode = 0;
+                string output = await ConsoleCapture.RunAsync(async () =>
+                {
+                    exitCode = await Program.RunAsync(ValidArgs, services =>
+                    {
+                        database.ReplaceDatabaseIn(services);
+                        services.AddSingleton<IScanQueue>(queue);
+                        services.AddSingleton<IRepositorySource>(source);
+                    });
+                });
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(exitCode, Is.EqualTo(1));
+                    Assert.That(output, Does.Contain("Azure DevOps refused the token, scanner stopped: Azure DevOps refused the token in Scanner:AzureDevOps:Pat"));
+                    Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
+                    Assert.That(output, Does.Not.Contain("   at "), "A rejected PAT should not print a stack trace");
+                }
             }
         }
 

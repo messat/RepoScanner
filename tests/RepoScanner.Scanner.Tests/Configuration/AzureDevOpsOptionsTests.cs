@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using RepoScanner.Scanner.Configuration;
@@ -76,6 +78,28 @@ namespace RepoScanner.Scanner.Tests.Configuration
                 Assert.That(text, Does.Contain("OrganizationUrl = https://dev.azure.com/BlacklightInternalsMo"));
                 Assert.That(text, Does.Contain("Pat = ***"));
                 Assert.That(leaked, Is.False, "ToString printed the PAT");
+            }
+        }
+
+        // Decision 5: locally the scanner clones from BlacklightInternalsMo, where victim-repo is. The organisation is not
+        // a secret, so it is in appsettings.Development.json; the PAT is not.
+        [Test]
+        public void CreateBuilder_InDevelopment_ClonesFromBlacklightInternalsMo()
+        {
+            string[] args =
+            {
+                "--environment", "Development",
+                "--Scanner:Queue:Name", "scan-nightly",
+                "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
+                "--Scanner:Database:ConnectionString", "Server=unused;Database=unused",
+                "--Scanner:AzureDevOps:Pat", Pat
+            };
+
+            using (IHost host = Program.CreateBuilder(args).Build())
+            {
+                AzureDevOpsOptions options = host.Services.GetRequiredService<IOptions<AzureDevOpsOptions>>().Value;
+
+                Assert.That(options.OrganizationUrl, Is.EqualTo("https://dev.azure.com/BlacklightInternalsMo"));
             }
         }
 

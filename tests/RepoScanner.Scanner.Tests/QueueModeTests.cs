@@ -5,35 +5,55 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using RepoScanner.Core.Entities;
 using RepoScanner.Core.Enums;
 using RepoScanner.Data;
 using RepoScanner.Scanner.Queue;
+using RepoScanner.Scanner.Sources;
 using RepoScanner.Scanner.Tests.Local;
 using RepoScanner.Scanner.Tests.Packages;
 using RepoScanner.Scanner.Tests.Queue;
 using RepoScanner.Scanner.Tests.Secrets;
+using RepoScanner.Scanner.Tests.Sources;
 
 namespace RepoScanner.Scanner.Tests
 {
     // Issue 7's success criteria (#35), one test each, through the whole program in queue mode as dotnet run starts
-    // it: real settings, scanners, loop and database code, with an in-memory queue, in-memory SQLite and a stand-in
-    // for nuget.org. The repository is the secrets fixture, found in LocalRoot like any queued repository. A missing
-    // queue exiting 2 is in ProgramTests.
+    // it: real settings, scanners, loop, clone and database code, with an in-memory queue, in-memory SQLite and a
+    // stand-in for nuget.org. The repository is a bare copy of the secrets fixture, cloned with the real git as any
+    // queued repository is (Issue 8). A missing queue exiting 2 is in ProgramTests.
     [TestFixture]
     public class QueueModeTests
     {
         // The secrets fixture's Azure DevOps ID, as a message would give it
         private static readonly Guid SecretsRepoId = new Guid("3c9f1a7e-5b2d-4e8f-a1c6-9d0e2f4b7a85");
 
+        // <_repos>/Lumina/_git/secrets-repo, made once: the tests only read it
+        private TempFolder _repos = null!;
+        private TempFolder _workspaces = null!;
         private SqliteTestDatabase _database = null!;
         private FakeNuGet _nuGet = null!;
         private FakeScanQueue _queue = null!;
 
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
+        {
+            _repos = new TempFolder();
+            BareRepository.Create(_repos.FullPath, "Lumina", "secrets-repo", "develop", FixtureSecrets.FolderPath);
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
+        {
+            _repos.Dispose();
+        }
+
         [SetUp]
         public void SetUp()
         {
+            _workspaces = new TempFolder();
             _database = new SqliteTestDatabase();
             _nuGet = new FakeNuGet();
             _queue = new FakeScanQueue();
@@ -44,6 +64,7 @@ namespace RepoScanner.Scanner.Tests
         {
             _database.Dispose();
             _nuGet.Dispose();
+            _workspaces.Dispose();
             Assert.That(_nuGet.UnknownAddresses, Is.Empty, "requests that would have reached the internet");
         }
 
@@ -161,8 +182,9 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
-        // The program as dotnet run starts it in queue mode. LocalRoot is the fixtures folder, so a message for
-        // secrets-repo scans tests/fixtures/secrets-repo.
+        // The program as dotnet run starts it in queue mode. The organisation is the folder of bare repositories, so a
+        // message for Lumina/secrets-repo clones the bare copy of tests/fixtures/secrets-repo. The clones go in a test
+        // folder, never the real %TEMP%\reposcanner.
         private async Task<(int ExitCode, string Output)> RunAsync(string queueName)
         {
             string[] args =
@@ -170,7 +192,9 @@ namespace RepoScanner.Scanner.Tests
                 "--Scanner:Queue:Name", queueName,
                 "--Scanner:Queue:ConnectionString", "UseDevelopmentStorage=true",
                 "--Scanner:Database:ConnectionString", "Server=unused;Database=unused",
-                "--Scanner:Source:LocalRoot", Path.GetDirectoryName(FixtureSecrets.FolderPath)!
+                "--Scanner:AzureDevOps:OrganizationUrl", BareRepository.OrganizationUrl(_repos.FullPath),
+                // A fake PAT: values starting "your-" are placeholders to RepoScanner's own self-scan
+                "--Scanner:AzureDevOps:Pat", "your-test-pat-0001"
             };
 
             int exitCode = 0;
@@ -181,6 +205,7 @@ namespace RepoScanner.Scanner.Tests
                     _database.ReplaceDatabaseIn(services);
                     _nuGet.ReplaceNuGetOrg(services);
                     services.AddSingleton<IScanQueue>(_queue);
+                    services.AddSingleton(new WorkspaceFolders(_workspaces.FullPath, NullLogger<WorkspaceFolders>.Instance));
                 });
             });
 

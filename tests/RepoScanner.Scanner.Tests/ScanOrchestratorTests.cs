@@ -23,11 +23,13 @@ using RepoScanner.Scanner.Queue;
 using RepoScanner.Scanner.Sources;
 using RepoScanner.Scanner.Tests.Local;
 using RepoScanner.Scanner.Tests.Queue;
+using RepoScanner.Scanner.Tests.Sources;
 
 namespace RepoScanner.Scanner.Tests
 {
-    // The queue loop (#31) with the queue in memory, the repositories in a temporary LocalRoot, a stub scanner and
-    // an in-memory database: everything real except the queue, the scanner and the clock
+    // The queue loop (#31) with the queue in memory, the repositories as folders in a temporary root, a stub scanner and
+    // an in-memory database: everything real except the queue, the source, the scanner and the clock. Cloning has its
+    // own tests (AzureDevOpsCloneSourceTests).
     [TestFixture]
     public class ScanOrchestratorTests
     {
@@ -35,6 +37,7 @@ namespace RepoScanner.Scanner.Tests
 
         private SqliteTestDatabase _database = null!;
         private TempFolder _root = null!;
+        private FakeRepositorySource _source = null!;
         private FakeScanQueue _queue = null!;
         private FakeTimeProvider _time = null!;
         private FakeLogger<ScanOrchestrator> _logger = null!;
@@ -45,6 +48,7 @@ namespace RepoScanner.Scanner.Tests
         {
             _database = new SqliteTestDatabase();
             _root = new TempFolder();
+            _source = new FakeRepositorySource(_root.FullPath);
             _queue = new FakeScanQueue();
 
             // Starts at a real date, so the ages of seeded Running runs read like the real thing
@@ -482,6 +486,32 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        // Issue 8 design, decision 13: every other repository would fail the same way, so the run stops and leaves the
+        // messages, rather than failing and in time poisoning each one
+        [Test]
+        public async Task RunAsync_WhenAzureDevOpsRefusesTheToken_StopsLeavingThatMessageAndTheRest()
+        {
+            _queue.Add(Body("orders-api", OrdersApiId));
+            _queue.Add(Body("billing-api"));
+            _source.Failure = new AzureDevOpsAuthenticationException(
+                "Azure DevOps refused the token in Scanner:AzureDevOps:Pat for https://dev.azure.com/example. Check that it has not expired or been revoked, and that it has Code (Read).",
+                new InvalidOperationException("git clone failed"));
+
+            await Assert.ThatAsync(() => CreateOrchestrator(new StubScanner()).RunAsync(CancellationToken.None), Throws.TypeOf<AzureDevOpsAuthenticationException>());
+
+            using (ScannerDbContext context = _database.CreateContext())
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(_queue.Deleted, Is.Empty);
+                Assert.That(_queue.Poisoned, Is.Empty);
+                Assert.That(_queue.WaitingCount, Is.EqualTo(1), "the second message was taken");
+                Assert.That(context.ScanRuns.Single().Status, Is.EqualTo(ScanRunStatus.Failed));
+                Assert.That(context.ScanRuns.Single().ErrorMessage, Does.StartWith("Azure DevOps refused the token"));
+                Assert.That(_logger.LatestRecord.Message,
+                    Is.EqualTo("Stopped taking messages from scan-nightly: Azure DevOps refused the token. 0 scanned, 1 failed, 0 skipped, 0 poisoned"));
+            }
+        }
+
         // The services a message's scan uses, as Program registers them, with the in-memory database and the stub
         // scanner in place of the real ones
         private ScanOrchestrator CreateOrchestrator(
@@ -504,7 +534,7 @@ namespace RepoScanner.Scanner.Tests
                 Options.Create(new QueueOptions { Name = queueName, ConnectionString = "UseDevelopmentStorage=true" }),
                 Options.Create(execution ?? new ExecutionOptions()),
                 _queue,
-                new LocalFolderSource(Options.Create(new SourceOptions { LocalRoot = _root.FullPath })),
+                _source,
                 _services.GetRequiredService<IServiceScopeFactory>(),
                 _time);
         }

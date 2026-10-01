@@ -160,8 +160,8 @@ namespace RepoScanner.Scanner.Queue
             return found;
         }
 
-        // The name becomes a folder under LocalRoot in Issue 7 and part of the clone URL in Issue 8, so a
-        // name such as ..\..\Windows must not reach either
+        // The name becomes part of the clone URL (Issue 8), and was a folder name in Issue 7, so a name such as
+        // ..\..\Windows must never reach it
         private static string? CheckRepositoryName(string repositoryName)
         {
             if (repositoryName == "." || repositoryName == "..")
