@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Puts one scan request on a lane's queue in local Azurite, creating the lane and poison queues first if they
-    are missing (Issue 7, #34).
+    are missing (Issue 7, #34; Issue 8 defaults, #41).
 
 .DESCRIPTION
     Builds the message in the format of the Issue 7 design (docs/design/2026-09-29-queue-consumer-and-execution-loop.md)
@@ -9,18 +9,28 @@
 
         dotnet run --project src/RepoScanner.Scanner
 
-    In Issue 7 the scanner finds the repository's code in the folder named RepositoryName inside
-    Scanner:Source:LocalRoot. Needs the Azure CLI (az) and Azurite running.
+    The scanner clones the repository from Scanner:AzureDevOps:OrganizationUrl, BlacklightInternalsMo in Development
+    (Issue 8), so it needs the Scanner__AzureDevOps__Pat user environment variable. This script needs neither: it
+    only needs the Azure CLI (az) and Azurite running.
 
 .PARAMETER RepositoryName
-    The folder to scan inside LocalRoot, such as victim-repo.
+    The repository to clone, such as victim-repo.
 
 .PARAMETER Queue
     scan-nightly (the default) or scan-ondemand.
 
+.PARAMETER ProjectName
+    The Azure DevOps project the repository is in: Kudos Wall by default.
+
+.PARAMETER DefaultBranch
+    The branch to clone, without refs/heads/: main by default.
+
 .PARAMETER RepositoryId
     The repository's Azure DevOps ID. By default a GUID made from the project and repository names, so running the
-    script again for the same repository lands on the same Repositories row.
+    script again for the same repository lands on the same Repositories row. To use the real one, as the enqueuer
+    will in Azure:
+
+        az repos show --org https://dev.azure.com/BlacklightInternalsMo --project "Kudos Wall" --repository victim-repo --query id -o tsv
 
 .PARAMETER Malformed
     Sends { "hello": 1 } instead, which the scanner moves straight to the lane's poison queue.
@@ -30,6 +40,9 @@
 
 .EXAMPLE
     .\scripts\enqueue-local.ps1 -RepositoryName victim-repo -Queue scan-ondemand
+
+.EXAMPLE
+    .\scripts\enqueue-local.ps1 -RepositoryName victim-repo -RepositoryId (az repos show --org https://dev.azure.com/BlacklightInternalsMo --project "Kudos Wall" --repository victim-repo --query id -o tsv)
 
 .EXAMPLE
     .\scripts\enqueue-local.ps1 -Malformed
@@ -45,11 +58,12 @@ param(
 
     [Parameter(ParameterSetName = 'Request')]
     [ValidateNotNullOrEmpty()]
-    [string] $ProjectName = 'Lumina',
+    # Where victim-repo is in BlacklightInternalsMo, the organisation Development clones from
+    [string] $ProjectName = 'Kudos Wall',
 
     [Parameter(ParameterSetName = 'Request')]
     [ValidateNotNullOrEmpty()]
-    [string] $DefaultBranch = 'develop',
+    [string] $DefaultBranch = 'main',
 
     [Parameter(ParameterSetName = 'Request')]
     [guid] $RepositoryId = [guid]::Empty,
