@@ -349,10 +349,10 @@ docker run --rm --env-file .env reposcanner:v1
 
 It stops at the first check that fails, says what to start or fix, and exits 1; it exits 0 when all 13 pass:
 
-- **`.env`:** every line is `NAME=value`, with no quotes, no `<...>` placeholder left and all five settings there. A problem is named by its line and setting, never its value.
+- **`.env`:** every line is `NAME=value`, with no quotes, no space at either end of a value, no `<...>` placeholder left, a queue name of `scan-nightly` or `scan-ondemand`, and all five settings there. A problem is named by its line and setting, never its value.
 - **The image:** it builds as `reposcanner:v1`, runs as a non-root user, has git 2.31 or later, no .NET SDK and no Development settings, and every base image in the Dockerfile has a tag other than `latest`.
 - **The connections:** a container reaches SQL Server on `host.docker.internal:1433` and Azurite on `host.docker.internal:10001`.
-- **A real scan:** it sends a request for `victim-repo` with its own correlation ID, runs the container, and checks that scan run is `Completed` or `PartiallyCompleted` with a commit ID. Messages already on `scan-nightly` are scanned too.
+- **A real scan:** it sends a request for `victim-repo`, with its own correlation ID, to the queue `.env` names, runs the container, and checks that scan run is `Completed` or `PartiallyCompleted` with a commit ID. Messages already on that queue are scanned too.
 - **An empty queue:** a second run exits 0 and saves no scan run.
 
 `-RepositoryName`, `-Tag`, `-SqlServer` and `-EnvFile` change what it uses. It needs Docker Desktop, Azurite and SQL Server running, and reads the scan runs with Windows authentication.

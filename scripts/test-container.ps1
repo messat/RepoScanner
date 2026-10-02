@@ -13,7 +13,8 @@
         13     a second run, on the now empty queue, exits 0 and saves no scan run
 
     Needs Docker Desktop, Azurite and SQL Server running, the Azure CLI (for enqueue-local.ps1), sqlcmd, and a
-    complete .env (README: Run in a container). Messages already on the queue are scanned too. Never prints a value
+    complete .env (README: Run in a container). The request goes to the queue .env names, and messages already on
+    that queue are scanned too. Never prints a value
     from .env. Exits 0 when every check passes, 1 at the first failure.
 
 .PARAMETER RepositoryName
@@ -129,7 +130,11 @@ $check = '.env is complete'
 if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) {
     Stop-WithFailure $check "there is no file at $EnvFile. Copy .env.example to .env and fill it in (README: Run in a container)"
 }
+# A full path, so .NET and docker read the file Test-Path found: Windows PowerShell 5.1 resolves a relative path
+# for .NET from the folder the process started in, not the current one
+$EnvFile = (Resolve-Path -LiteralPath $EnvFile).ProviderPath
 $found = @{}
+$queueName = ''
 $lineNumber = 0
 foreach ($line in [System.IO.File]::ReadAllLines($EnvFile)) {
     $lineNumber++
@@ -149,9 +154,20 @@ foreach ($line in [System.IO.File]::ReadAllLines($EnvFile)) {
     if ($value.StartsWith('"') -or $value.StartsWith("'")) {
         Stop-WithFailure $check "line $lineNumber, $name, is in quotes. Docker keeps them as part of the value: remove them"
     }
+    # Docker keeps spaces too, so a PAT pasted with a trailing space would be refused as if it were wrong
+    if ($value -ne $value.Trim()) {
+        Stop-WithFailure $check "line $lineNumber, $name, starts or ends with a space. Docker keeps it as part of the value: remove it"
+    }
     # A line copied from .env.example and not filled in
     if ($value -match '<[^<>]+>') {
         Stop-WithFailure $check "line $lineNumber, $name, still has a placeholder: replace the <...> with the real value"
+    }
+    # The queue name is not a secret: check 12 sends its message to the queue the container reads
+    if ($name -eq 'Scanner__Queue__Name') {
+        if ($value -ne 'scan-nightly' -and $value -ne 'scan-ondemand') {
+            Stop-WithFailure $check "line $lineNumber, $name, must be scan-nightly or scan-ondemand"
+        }
+        $queueName = $value
     }
     $found[$name] = $true
 }
@@ -245,7 +261,7 @@ Write-Pass "$check (host.docker.internal:10001)"
 $check = 'A message is scanned'
 $correlationId = [guid]::NewGuid()
 try {
-    & (Join-Path $PSScriptRoot 'enqueue-local.ps1') -RepositoryName $RepositoryName -CorrelationId $correlationId | Out-Host
+    & (Join-Path $PSScriptRoot 'enqueue-local.ps1') -RepositoryName $RepositoryName -Queue $queueName -CorrelationId $correlationId | Out-Host
 }
 catch {
     Stop-WithFailure $check "enqueue-local.ps1 failed: $($_.Exception.Message)"
