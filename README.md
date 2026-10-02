@@ -30,7 +30,7 @@ RepoScanner.Scanner ──► RepoScanner.Data ──► RepoScanner.Core
 - SQL Server installed on your machine (Express, Developer or a full edition), reached with Windows authentication. Only needed to create and use the local database; the tests do not need it
 - SQL Server Management Studio (optional), to look at the tables
 - To scan from the queue locally: [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite), the local storage emulator, installed with npm; the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), for `scripts/enqueue-local.ps1`; and Azure Storage Explorer (optional), to look at the queues
-- To run in a container: [Docker Desktop](https://www.docker.com/products/docker-desktop/), with Linux containers, to build and run the scanner image
+- To run in a container: [Docker Desktop](https://www.docker.com/products/docker-desktop/), with Linux containers, to build and run the scanner image; and [sqlcmd](https://learn.microsoft.com/sql/tools/sqlcmd/sqlcmd-utility), the SQL Server command-line tool, which SQL Server's installer usually adds, for `scripts/test-container.ps1` and to check the container's login
 
 ## Build and run
 
@@ -355,7 +355,7 @@ It stops at the first check that fails, says what to start or fix, and exits 1; 
 - **A real scan:** it sends a request for `victim-repo`, with its own correlation ID, to the queue `.env` names, runs the container, and checks that scan run is `Completed` or `PartiallyCompleted` with a commit ID. Messages already on that queue are scanned too.
 - **An empty queue:** a second run exits 0 and saves no scan run.
 
-`-RepositoryName`, `-Tag`, `-SqlServer` and `-EnvFile` change what it uses. It needs Docker Desktop, Azurite and SQL Server running, and reads the scan runs with Windows authentication.
+`-RepositoryName`, `-Tag`, `-SqlServer` and `-EnvFile` change what it uses. It needs Docker Desktop, Azurite and SQL Server running, the Azure CLI (it sends the request with `enqueue-local.ps1`) and sqlcmd, and reads the scan runs with Windows authentication. If PowerShell refuses to run scripts, run it as `powershell -ExecutionPolicy Bypass -File scripts\test-container.ps1`.
 
 ### Image size and caching
 
@@ -375,7 +375,7 @@ On top of the runtime, the image adds git and its packages (79 MB unpacked) and 
 | After changing one `.cs` file | 13 s: only `COPY src/`, the publish and the final copy run |
 | With nothing changed | 2 s |
 
-The project files are copied and restored before the code, so the restore step stays `CACHED` until a project file or package version changes; installing git is `CACHED` until the runtime image changes.
+The project files are copied and restored before the code, so the restore step stays `CACHED` until something copied before it changes: a `.csproj`, `Directory.Packages.props` (the package versions), `Directory.Build.props`, `global.json` or `.editorconfig`. A change to the code alone never re-runs it. Installing git is `CACHED` until the runtime image changes.
 
 ## Known limitations
 

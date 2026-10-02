@@ -286,11 +286,18 @@ Write-Pass "$check ($RepositoryName $status at $($commitSha.Substring(0, 7)))"
 # 13. Check 12 left the queue empty, since the scanner takes every message before it exits.
 $check = 'An empty queue exits 0 with no new scan run'
 $before = Invoke-Sql 'SELECT COUNT(*) FROM ScanRuns'
+# Two failed reads would both be empty and compare equal, so each count must have been read
+if ($LASTEXITCODE -ne 0 -or $before -notmatch '^\d+$') {
+    Stop-WithFailure $check "sqlcmd could not count ScanRuns on $SqlServer"
+}
 Invoke-Shown 'docker' @('run', '--rm', '--env-file', $EnvFile, $image)
 if ($LASTEXITCODE -ne 0) {
     Stop-WithFailure $check "the scanner exited ${LASTEXITCODE}: see its log above"
 }
 $after = Invoke-Sql 'SELECT COUNT(*) FROM ScanRuns'
+if ($LASTEXITCODE -ne 0 -or $after -notmatch '^\d+$') {
+    Stop-WithFailure $check "sqlcmd could not count ScanRuns on $SqlServer"
+}
 if ($before -ne $after) {
     Stop-WithFailure $check "ScanRuns went from $before to $after rows"
 }
