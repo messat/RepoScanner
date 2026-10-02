@@ -34,6 +34,9 @@
   <!-- Copy the settings files next to the built app, where the host looks for them -->
   <ItemGroup>
     <None Update="appsettings*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Published images run as Production with every setting from environment variables, so the
+         Development settings stay out of the published app (Issue 9 design, decision 4) -->
+    <None Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
   <!-- Scanner uses Core's types and Data's database access -->

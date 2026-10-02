@@ -5,9 +5,11 @@
 
 .DESCRIPTION
     Builds the message in the format of the Issue 7 design (docs/design/2026-09-29-queue-consumer-and-execution-loop.md)
-    and sends it as plain text, as the scanner reads it. Run the scanner afterwards to scan it:
+    and sends it as plain text, as the scanner reads it. Run the scanner afterwards to scan it, on this machine or in
+    its container (README: Run in a container):
 
         dotnet run --project src/RepoScanner.Scanner
+        docker run --rm --env-file .env reposcanner:v1
 
     The scanner clones the repository from Scanner:AzureDevOps:OrganizationUrl, BlacklightInternalsMo in Development
     (Issue 8), so it needs the Scanner__AzureDevOps__Pat user environment variable. This script needs neither: it
@@ -31,6 +33,10 @@
     will in Azure:
 
         az repos show --org https://dev.azure.com/BlacklightInternalsMo --project "Kudos Wall" --repository victim-repo --query id -o tsv
+
+.PARAMETER CorrelationId
+    The message's correlation ID, which its scan run keeps. A new GUID by default; test-container.ps1 sets it to find
+    the scan run (Issue 9).
 
 .PARAMETER Malformed
     Sends { "hello": 1 } instead, which the scanner moves straight to the lane's poison queue.
@@ -67,6 +73,9 @@ param(
 
     [Parameter(ParameterSetName = 'Request')]
     [guid] $RepositoryId = [guid]::Empty,
+
+    [Parameter(ParameterSetName = 'Request')]
+    [guid] $CorrelationId = [guid]::Empty,
 
     [Parameter(Mandatory = $true, ParameterSetName = 'Malformed')]
     [switch] $Malformed,
@@ -115,9 +124,14 @@ else {
         $RepositoryId = [guid]::new([byte[]] $hash[0..15])
     }
 
+    # A new one for each message unless one is given, as the enqueuer makes one per request
+    if ($CorrelationId -eq [guid]::Empty) {
+        $CorrelationId = [guid]::NewGuid()
+    }
+
     $request = [ordered]@{
         schemaVersion  = 1
-        correlationId  = [guid]::NewGuid().ToString()
+        correlationId  = $CorrelationId.ToString()
         repositoryId   = $RepositoryId.ToString()
         projectName    = $ProjectName
         repositoryName = $RepositoryName
@@ -138,4 +152,5 @@ finally {
 }
 
 Write-Host "Added to ${Queue}: $body"
-Write-Host 'Now run: dotnet run --project src/RepoScanner.Scanner'
+# Either way of running the scanner reads the same queue, so both are named (Issue 9)
+Write-Host 'Now run the scanner: dotnet run --project src/RepoScanner.Scanner, or in its container: docker run --rm --env-file .env reposcanner:v1'

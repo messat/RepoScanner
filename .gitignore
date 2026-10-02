@@ -15,8 +15,11 @@ coverage/
 *.cobertura.xml
 coverage.json
 
-# Local secrets and environment files (never commit these)
+# Local secrets and environment files (never commit these). Any .env.<name>, such as a second settings file for
+# test-container.ps1 -EnvFile, is ignored too; .env.example holds only placeholders and is committed.
 .env
+.env.*
+!.env.example
 appsettings.*.local.json
 
 # Scanner working folders created during local runs

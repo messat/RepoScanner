@@ -30,5 +30,23 @@ namespace RepoScanner.Scanner.Tests.Secrets
             // Rule, file and line only, so a failure never prints a secret
             Assert.That(findings.Select(finding => finding.RuleId + " " + finding.FilePath + ":" + finding.LineNumber), Is.Empty);
         }
+
+        // .env.example is committed and sits beside the real .env, so someone filling in the wrong file would commit
+        // real secrets. Copied into a folder of its own, so the real .env is never scanned or printed.
+        [Test]
+        public async Task ScanAsync_OnTheEnvExampleFile_FindsNothing()
+        {
+            using (TempFolder temp = new TempFolder())
+            {
+                File.Copy(Path.Combine(RepositoryRoot.FullPath, ".env.example"), Path.Combine(temp.FullPath, ".env.example"));
+                SecretScanner scanner = new SecretScanner(
+                    new RepositoryFileWalker(NullLogger<RepositoryFileWalker>.Instance), AllSecretRules.Create(), NullLogger<SecretScanner>.Instance);
+
+                IReadOnlyList<RawFinding> findings = await scanner.ScanAsync(temp.FullPath, CancellationToken.None);
+
+                // Rule, file and line only, so a failure never prints a secret
+                Assert.That(findings.Select(finding => finding.RuleId + " " + finding.FilePath + ":" + finding.LineNumber), Is.Empty);
+            }
+        }
     }
 }
