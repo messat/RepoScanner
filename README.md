@@ -120,6 +120,52 @@ dotnet ef database update --project src/RepoScanner.Data --startup-project src/R
 
 The first run creates the `RepoScanner` database and its tables; later runs apply any new migrations. Do not create the database by hand: building it from the migrations alone is how we know a fresh database can always be stood up.
 
+### For the scanner container
+
+Only needed to [run in a container](#run-in-a-container). A Linux container cannot use Windows authentication, so the container signs in with a SQL login of its own, `repo_scanner_local`. It holds db_datareader and db_datawriter only, the same rights as the scanner in Azure ([ADR-008](docs/adr/ADR-008-two-privilege-levels.md)), so it can read and write rows but not change tables; `dotnet ef` keeps using Windows authentication. Once, after the database exists:
+
+1. **TCP/IP on port 1433.** In SQL Server Configuration Manager, SQL Server Network Configuration, Protocols for SQLEXPRESS: set TCP/IP to Enabled. In its properties, IP Addresses tab, under IPAll: TCP Dynamic Ports empty and TCP Port `1433`. Restart the SQL Server (SQLEXPRESS) service. The container connects by port, as `host.docker.internal,1433`, since an instance name such as `.\SQLEXPRESS` only works on this machine.
+2. **SQL Server and Windows Authentication mode.** In SSMS, right-click the server, Properties, Security. Restart the service if you changed it. Leave the `sa` login disabled.
+3. **A password.** Letters and digits only, since `;`, `=` or a quote would break the connection string. This makes a 64-character one and copies it to the clipboard without showing it:
+
+   ```powershell
+   ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N').ToUpper()) | Set-Clipboard
+   ```
+
+4. **The login.** In SSMS, a new query: paste this, replace `<password>` with the clipboard, run it, then close the tab without saving, so the password is not left in a file:
+
+   ```sql
+   CREATE LOGIN repo_scanner_local
+       WITH PASSWORD = N'<password>',
+            DEFAULT_DATABASE = RepoScanner,
+            CHECK_POLICY = ON;
+   GO
+   USE RepoScanner;
+   GO
+   CREATE USER repo_scanner_local FOR LOGIN repo_scanner_local;
+   ALTER ROLE db_datareader ADD MEMBER repo_scanner_local;
+   ALTER ROLE db_datawriter ADD MEMBER repo_scanner_local;
+   ```
+
+5. **The password goes only in `.env`**, after `Password=` in `Scanner__Database__ConnectionString` (see [Run in a container](#run-in-a-container)). Never in the repository.
+6. **Check it.** The first asks for the password and shows `repo_scanner_local   RepoScanner`; the second is refused with `CREATE TABLE permission denied`:
+
+   ```powershell
+   sqlcmd -S localhost,1433 -U repo_scanner_local -d RepoScanner -C -Q "SELECT SUSER_NAME(), DB_NAME()"
+   ```
+
+   ```powershell
+   sqlcmd -S localhost,1433 -U repo_scanner_local -d RepoScanner -C -Q "CREATE TABLE dbo.ShouldFail (Id int)"
+   ```
+
+No Windows Firewall rule is needed: Docker Desktop passes `host.docker.internal` to this machine's own 127.0.0.1. To start again, for a new password, remove the login first, then repeat steps 3 to 6:
+
+```sql
+USE RepoScanner;
+DROP USER repo_scanner_local;
+DROP LOGIN repo_scanner_local;
+```
+
 ### Change the model
 
 After changing an entity in Core or a configuration in `src/RepoScanner.Data/Configurations/`, add a migration, read the generated file, then apply it:
@@ -264,7 +310,7 @@ The image is what Azure runs ([Issue 9 design](docs/design/2026-10-01-containeri
 
 1. Install Docker Desktop and start it.
 2. Start Azurite as in [Scan from the queue locally](#scan-from-the-queue-locally). It needs no extra flags: Docker Desktop passes `host.docker.internal` to this machine's own 127.0.0.1, where Azurite listens.
-3. Set up SQL Server for the container, as in [Database and migrations](#database-and-migrations), One-off setup: TCP/IP on port 1433, mixed-mode authentication and the `repo_scanner_local` login. A Linux container cannot use Windows authentication.
+3. Set up SQL Server for the container, as in [Database and migrations, For the scanner container](#for-the-scanner-container): TCP/IP on port 1433, mixed-mode authentication and the `repo_scanner_local` login. A Linux container cannot use Windows authentication.
 4. Copy `.env.example` to `.env`, which git ignores, and replace each `<...>`. One `NAME=value` per line, with no quotes: Docker keeps quotes as part of the value.
 
    ```bash
