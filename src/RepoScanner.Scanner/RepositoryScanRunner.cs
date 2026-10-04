@@ -22,6 +22,12 @@ namespace RepoScanner.Scanner
     // queue loop both use it; only where the repository details and the folder come from differs (Issue 7 design).
     public sealed class RepositoryScanRunner
     {
+        // The summary line (#64). Its property names are what the Log Analytics searches use (Issue 10 design, Searches).
+        private const string SummaryTemplate =
+            "Scan run {ScanRunId} {ScanRunStatus} ({Trigger}) for {ProjectName}/{RepositoryName} at {CommitSha} in {DurationMs} ms: "
+            + "{FoundCount} found, {NewCount} new, {ReopenedCount} reopened, {ResolvedCount} resolved, {SuppressionExpiredCount} suppressions expired. "
+            + "Scanners: {ScannerStatuses}";
+
         private readonly IScanRunRepository _scanRuns;
         private readonly IFindingRepository _findings;
         private readonly IReadOnlyList<IScanner> _scanners;
@@ -73,6 +79,13 @@ namespace RepoScanner.Scanner
 
                 // The clone's commit, saved however the run ends once the clone has worked; empty when it failed (#38)
                 string? commitSha = null;
+
+                // Each scanner's result so far, and how the run ended, for its summary line whatever the outcome (#64).
+                // The counts stay 0 unless the run is reconciled, as ScanRuns saves them.
+                List<ScannerResult> results = new List<ScannerResult>();
+                ScanRunCompletion? outcome = null;
+                int foundCount = 0;
+                int suppressionExpiredCount = 0;
                 try
                 {
                     // Opened after the run started, so a folder that cannot be opened is recorded against it, and always
@@ -84,7 +97,6 @@ namespace RepoScanner.Scanner
                         _logger.LogInformation("Scanning {Folder} as scan run {ScanRunId}", folder, scanRun.Id);
 
                         List<RawFinding> found = new List<RawFinding>();
-                        List<ScannerResult> results = new List<ScannerResult>();
 
                         // Only these can resolve their findings: one that failed found nothing because it did not look,
                         // not because everything was fixed (ADR-025, rule 7)
@@ -147,6 +159,7 @@ namespace RepoScanner.Scanner
                                 ScanRunStatus.Failed, commitSha, DateTime.UtcNow, NewCount: 0, ReopenedCount: 0, ResolvedCount: 0, failures, results);
                             await _scanRuns.CompleteRunAsync(scanRun.Id, failed, scanToken);
                             recorded = true;
+                            outcome = failed;
 
                             ExceptionDispatchInfo.Throw(firstFailure);
                         }
@@ -167,22 +180,9 @@ namespace RepoScanner.Scanner
                             results);
                         await _scanRuns.CompleteRunAsync(scanRun.Id, completion, scanToken);
                         recorded = true;
-
-                        _logger.LogInformation(
-                            "Scan run {ScanRunId} {Status} in {DurationMs} ms: {FoundCount} found, {NewCount} new, {ReopenedCount} reopened, {ResolvedCount} resolved, {SuppressionExpiredCount} suppressions expired",
-                            scanRun.Id,
-                            status,
-                            duration.ElapsedMilliseconds,
-                            found.Count,
-                            reconciliation.NewCount,
-                            reconciliation.ReopenedCount,
-                            reconciliation.ResolvedCount,
-                            reconciliation.SuppressionExpiredCount);
-
-                        if (failures != null)
-                        {
-                            _logger.LogWarning("Scan run {ScanRunId} partially completed: {ErrorMessage}", scanRun.Id, failures);
-                        }
+                        outcome = completion;
+                        foundCount = found.Count;
+                        suppressionExpiredCount = reconciliation.SuppressionExpiredCount;
                     }
                 }
                 catch (Exception exception) when (!recorded && timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -192,14 +192,48 @@ namespace RepoScanner.Scanner
                         "The scan took longer than " + timeLimit.GetValueOrDefault().TotalMinutes.ToString(CultureInfo.InvariantCulture)
                         + " minutes and was stopped (Scanner:Execution:ScanTimeoutPerRepoMinutes)",
                         exception);
-                    await RecordFailureAsync(scanRun.Id, timedOut, commitSha);
+                    outcome = await RecordFailureAsync(scanRun.Id, timedOut, commitSha);
                     throw timedOut;
                 }
                 catch (Exception exception) when (!recorded)
                 {
-                    await RecordFailureAsync(scanRun.Id, exception, commitSha);
+                    outcome = await RecordFailureAsync(scanRun.Id, exception, commitSha);
                     throw;
                 }
+                finally
+                {
+                    // Last, once the outcome is saved and the clone is closed, so it is the run's last line however the
+                    // run ended, rethrown failures included (#64)
+                    if (outcome != null)
+                    {
+                        LogSummary(scanRun.Id, repository, trigger, outcome, results, foundCount, suppressionExpiredCount, duration.ElapsedMilliseconds);
+                    }
+                }
+            }
+        }
+
+        // The scan run's last line, whatever its outcome (#64, Issue 10 design, decisions 5 and 6): what a reader needs to
+        // act on it. Completed is Information; anything else is a Warning ending with the error.
+        private void LogSummary(int scanRunId, RepositoryDetails repository, ScanTrigger trigger, ScanRunCompletion completion,
+            IReadOnlyList<ScannerResult> results, int foundCount, int suppressionExpiredCount, long durationMs)
+        {
+            // Scanner type to status, in the order they ran: an object such as {"Package":"Failed"} in JSON
+            Dictionary<string, string> scannerStatuses = results.ToDictionary(result => result.ScannerType.ToString(), result => result.Status.ToString());
+
+            if (completion.Status == ScanRunStatus.Completed)
+            {
+                _logger.LogInformation(
+                    SummaryTemplate,
+                    scanRunId, completion.Status, trigger, repository.ProjectName, repository.Name, completion.CommitSha, durationMs,
+                    foundCount, completion.NewCount, completion.ReopenedCount, completion.ResolvedCount, suppressionExpiredCount, scannerStatuses);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    SummaryTemplate + ". Error: {ErrorMessage}",
+                    scanRunId, completion.Status, trigger, repository.ProjectName, repository.Name, completion.CommitSha, durationMs,
+                    foundCount, completion.NewCount, completion.ReopenedCount, completion.ResolvedCount, suppressionExpiredCount, scannerStatuses,
+                    completion.ErrorMessage);
             }
         }
 
@@ -268,14 +302,14 @@ namespace RepoScanner.Scanner
 
         // Marks the run Failed with the error, so a failed scan is visible in ScanRuns (ADR-013). If that
         // fails too, for example because the database is down, it is logged and the original error is
-        // the one that continues. commitSha is null when the clone itself failed (#38).
-        private async Task RecordFailureAsync(int scanRunId, Exception failure, string? commitSha)
+        // the one that continues. commitSha is null when the clone itself failed (#38). Returns what it tried to save,
+        // so the summary line says Failed even when the save failed too (#64).
+        private async Task<ScanRunCompletion> RecordFailureAsync(int scanRunId, Exception failure, string? commitSha)
         {
+            ScanRunCompletion completion = new ScanRunCompletion(
+                ScanRunStatus.Failed, commitSha, DateTime.UtcNow, NewCount: 0, ReopenedCount: 0, ResolvedCount: 0, failure.Message, Array.Empty<ScannerResult>());
             try
             {
-                ScanRunCompletion completion = new ScanRunCompletion(
-                    ScanRunStatus.Failed, commitSha, DateTime.UtcNow, NewCount: 0, ReopenedCount: 0, ResolvedCount: 0, failure.Message, Array.Empty<ScannerResult>());
-
                 // Not the run's token: a cancelled run is still recorded as Failed
                 await _scanRuns.CompleteRunAsync(scanRunId, completion, CancellationToken.None);
             }
@@ -283,6 +317,8 @@ namespace RepoScanner.Scanner
             {
                 _logger.LogWarning(recordingFailure, "Could not mark scan run {ScanRunId} as failed", scanRunId);
             }
+
+            return completion;
         }
     }
 }

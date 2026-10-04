@@ -326,7 +326,7 @@ namespace RepoScanner.Scanner.Tests.Local
                     Assert.That(context.Findings.Where(finding => finding.ScannerType == ScannerType.Package).Select(finding => finding.Status),
                         Is.All.EqualTo(FindingStatus.Open));
                     Assert.That(context.Findings.Count(finding => finding.ScannerType == ScannerType.Package), Is.EqualTo(FixturePackages.All.Count));
-                    Assert.That(output, Does.Contain("partially completed"));
+                    Assert.That(output, Does.Contain("PartiallyCompleted"));
                 }
             }
         }

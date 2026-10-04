@@ -305,14 +305,111 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
-        // A partly failed run is not an error for the process: it is saved, and the warning says why
+        // #64: the run's last line says how it went, with everything a reader needs to act on it
         [Test]
-        public async Task RunAsync_WhenOneOfTwoScannersFails_LogsAWarningForThePartiallyCompletedRun()
+        public async Task RunAsync_WhenItCompletes_EndsWithOneSummaryLineHoldingEveryCount()
         {
+            await RunAsync(OpenClone, timeLimit: null, CancellationToken.None,
+                new StubScanner(Raw("SEC003", "a.json", 3, "hash-a"), Raw("SEC007", "a.json", 6, "hash-b")), new StubScanner() { ScannerType = ScannerType.Package });
+
+            FakeLogRecord summary = TheSummary();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(summary.Level, Is.EqualTo(LogLevel.Information));
+                Assert.That(summary.GetStructuredStateValue("ScanRunStatus"), Is.EqualTo("Completed"));
+                Assert.That(summary.GetStructuredStateValue("Trigger"), Is.EqualTo("OnDemand"));
+                Assert.That(summary.GetStructuredStateValue("ProjectName"), Is.EqualTo("Lumina"));
+                Assert.That(summary.GetStructuredStateValue("RepositoryName"), Is.EqualTo("orders-api"));
+                Assert.That(summary.GetStructuredStateValue("CommitSha"), Is.EqualTo(CommitId));
+                Assert.That(summary.GetStructuredStateValue("FoundCount"), Is.EqualTo("2"));
+                Assert.That(summary.GetStructuredStateValue("NewCount"), Is.EqualTo("2"));
+                Assert.That(summary.GetStructuredStateValue("ReopenedCount"), Is.EqualTo("0"));
+                Assert.That(summary.GetStructuredStateValue("ResolvedCount"), Is.EqualTo("0"));
+                Assert.That(summary.GetStructuredStateValue("SuppressionExpiredCount"), Is.EqualTo("0"));
+                Assert.That(summary.GetStructuredStateValue("ScannerStatuses"), Is.EqualTo("[\"[Secret, Succeeded]\",\"[Package, Succeeded]\"]"));
+                Assert.That(summary.Message, Does.Not.Contain("Error:"));
+            }
+        }
+
+        // A partly failed run is not an error for the process: it is saved, and its summary is the warning that says why
+        [Test]
+        public async Task RunAsync_WhenPartiallyCompleted_TheSummaryIsAWarningWithTheError()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")), FailingPackageScanner("nuget.org data could not be downloaded"));
+
+            FakeLogRecord summary = TheSummary();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(summary.Level, Is.EqualTo(LogLevel.Warning));
+                Assert.That(summary.GetStructuredStateValue("ScanRunStatus"), Is.EqualTo("PartiallyCompleted"));
+                Assert.That(summary.GetStructuredStateValue("ErrorMessage"), Is.EqualTo("Package scanner failed: nuget.org data could not be downloaded"));
+                Assert.That(summary.GetStructuredStateValue("ScannerStatuses"), Is.EqualTo("[\"[Secret, Succeeded]\",\"[Package, Failed]\"]"));
+                Assert.That(_logger.Collector.GetSnapshot().Select(record => record.Message), Has.None.Contains("partially completed:"));
+            }
+        }
+
+        // Every way a run fails ends with the same summary, so a search for failed scans finds them all (#64)
+        [TestCase("every scanner fails")]
+        [TestCase("the workspace cannot be opened")]
+        [TestCase("the time limit is reached")]
+        [TestCase("the run is cancelled")]
+        [TestCase("saving the findings fails")]
+        public async Task RunAsync_WhenTheRunFails_EndsWithOneFailedSummary(string how)
+        {
+            using (CancellationTokenSource stopping = new CancellationTokenSource())
+            {
+                Func<Task> run = how switch
+                {
+                    "every scanner fails" => () => RunAsync(
+                        new StubScanner(new InvalidOperationException("Disk read failed")), FailingPackageScanner("nuget.org data could not be downloaded")),
+                    "the workspace cannot be opened" => () => RunAsync(
+                        _ => throw new DirectoryNotFoundException(@"No folder named Ghost in C:\repos"), timeLimit: null, CancellationToken.None, new StubScanner()),
+                    "the time limit is reached" => () => RunAsync(
+                        OpenFolder, TimeSpan.FromMinutes(15), CancellationToken.None, new StubScanner() { OnScan = () => _time.Advance(TimeSpan.FromMinutes(15)) }),
+                    "the run is cancelled" => () => RunAsync(
+                        stopping.Token, new StubScanner(new OperationCanceledException(stopping.Token)) { OnScan = stopping.Cancel }),
+                    _ => () => RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a") with { Message = null! }))
+                };
+
+                await Assert.ThatAsync(() => run(), Throws.InstanceOf<Exception>());
+            }
+
+            FakeLogRecord summary = TheSummary();
+            string? savedError;
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                savedError = context.ScanRuns.Single().ErrorMessage;
+            }
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(summary.Level, Is.EqualTo(LogLevel.Warning));
+                Assert.That(summary.GetStructuredStateValue("ScanRunStatus"), Is.EqualTo("Failed"));
+                Assert.That(new[] { "FoundCount", "NewCount", "ReopenedCount", "ResolvedCount" }.Select(name => summary.GetStructuredStateValue(name)),
+                    Is.All.EqualTo("0"));
+                Assert.That(savedError, Is.Not.Null);
+                Assert.That(summary.GetStructuredStateValue("ErrorMessage"), Is.EqualTo(savedError));
+                if (how == "the workspace cannot be opened")
+                {
+                    Assert.That(summary.GetStructuredStateValue("CommitSha"), Is.Null);
+                    Assert.That(summary.GetStructuredStateValue("ScannerStatuses"), Is.EqualTo("[]"));
+                }
+
+                if (how == "every scanner fails")
+                {
+                    Assert.That(summary.GetStructuredStateValue("ScannerStatuses"), Is.EqualTo("[\"[Secret, Failed]\",\"[Package, Failed]\"]"));
+                }
+            }
+        }
+
+        // Issue 10 design, decision 7: the run's status is ScanRunStatus, so a search on it never mixes in anything else
+        [Test]
+        public async Task RunAsync_NoLineHasAStatusProperty()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")));
             await RunAsync(new StubScanner(), FailingPackageScanner("nuget.org data could not be downloaded"));
 
-            FakeLogRecord warning = _logger.Collector.GetSnapshot().Last(record => record.Level == LogLevel.Warning);
-            Assert.That(warning.GetStructuredStateValue("ErrorMessage"), Is.EqualTo("Package scanner failed: nuget.org data could not be downloaded"));
+            Assert.That(_logger.Collector.GetSnapshot().Select(record => record.GetStructuredStateValue("Status")), Is.All.Null);
         }
 
         // #32: with every scanner failed there is nothing to reconcile. The run is Failed, recorded once with every
@@ -827,6 +924,19 @@ namespace RepoScanner.Scanner.Tests
                     Assert.That(run.CommitSha, Is.EqualTo(CommitId));
                 }
             }
+        }
+
+        // The one summary line of the run (#64): there is exactly one, and it is the last line the runner logs. FakeLogger
+        // keeps its ScannerStatuses dictionary as text, one "[type, status]" per scanner; the JSON object Serilog writes
+        // from it is checked through the whole program (#100).
+        private FakeLogRecord TheSummary()
+        {
+            IReadOnlyList<FakeLogRecord> records = _logger.Collector.GetSnapshot();
+            FakeLogRecord[] summaries = records.Where(record => record.Message.StartsWith("Scan run ", StringComparison.Ordinal)).ToArray();
+
+            Assert.That(summaries, Has.Length.EqualTo(1), "one summary line");
+            Assert.That(records[records.Count - 1], Is.SameAs(summaries[0]), "the summary is logged last");
+            return summaries[0];
         }
 
         private Task RunAsync(params IScanner[] scanners)
