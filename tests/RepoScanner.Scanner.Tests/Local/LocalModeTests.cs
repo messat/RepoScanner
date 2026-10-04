@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
 using RepoScanner.Core.Entities;
 using RepoScanner.Core.Enums;
 using RepoScanner.Data;
+using RepoScanner.Scanner.Local;
 using RepoScanner.Scanner.Secrets;
 using RepoScanner.Scanner.Tests.CodePatterns;
 using RepoScanner.Scanner.Tests.Packages;
@@ -326,8 +328,49 @@ namespace RepoScanner.Scanner.Tests.Local
                     Assert.That(context.Findings.Where(finding => finding.ScannerType == ScannerType.Package).Select(finding => finding.Status),
                         Is.All.EqualTo(FindingStatus.Open));
                     Assert.That(context.Findings.Count(finding => finding.ScannerType == ScannerType.Package), Is.EqualTo(FixturePackages.All.Count));
-                    Assert.That(output, Does.Contain("partially completed"));
+                    Assert.That(output, Does.Contain("PartiallyCompleted"));
                 }
+            }
+        }
+
+        // Issue 10 review: a --path scan's lines carry its correlation ID and folder through the whole program too, so a
+        // local scan is as searchable as a queued one; the ID is the one its scan run saved
+        [Test]
+        public async Task Path_EveryLineOfTheScan_CarriesItsCorrelationIdAndFolder()
+        {
+            (int exitCode, string output) = await RunAsync("--path", FixtureSecrets.FolderPath);
+
+            IReadOnlyList<JsonElement> lines = LogLines.Read(output);
+            string correlationId = LastRun().CorrelationId.ToString();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(0));
+                Assert.That(lines, Is.Not.Empty);
+                Assert.That(lines.Select(line => LogLines.Value(line, "CorrelationId")), Is.All.EqualTo(correlationId));
+                Assert.That(lines.Select(line => LogLines.Value(line, "ProjectName")), Is.All.EqualTo(LocalScanRunner.LocalProjectName));
+                Assert.That(lines.Select(line => LogLines.Value(line, "RepositoryName")), Is.All.EqualTo("secrets-repo"));
+            }
+        }
+
+        // Issue 10 design, decision 11, and Review Focus 5: each nuget.org request's own lines are gone, which were most of a
+        // run's lines, but a retry, which says nuget.org is struggling, still shows
+        [Test]
+        public async Task Path_WhenNuGetOrgGoesDown_LogsTheRetriesButNotEachRequest()
+        {
+            string folder = CopyOfThePackagesFixtureWithSecrets();
+            _nuGet.Fail();
+
+            (int exitCode, string output) = await RunAsync("--path", folder);
+
+            JsonElement[] http = LogLines.Read(output).Where(line =>
+                (LogLines.Value(line, "SourceContext") ?? string.Empty).StartsWith("System.Net.Http.HttpClient", StringComparison.Ordinal)
+                || (LogLines.Value(line, "SourceContext") ?? string.Empty).StartsWith("Polly", StringComparison.Ordinal)).ToArray();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(0));
+                Assert.That(http.Where(line => LogLines.Level(line) == "Information"), Is.Empty);
+                Assert.That(http.Where(line => LogLines.Value(line, "SourceContext")!.StartsWith("Polly", StringComparison.Ordinal) && LogLines.Level(line) == "Warning"),
+                    Is.Not.Empty);
             }
         }
 
@@ -442,7 +485,7 @@ namespace RepoScanner.Scanner.Tests.Local
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(exitCode, Is.EqualTo(2));
-                Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
+                Assert.That(LogLines.Read(output).Count(line => LogLines.Level(line) == "Fatal"), Is.EqualTo(1));
                 Assert.That(output, Does.Contain("--path"));
                 Assert.That(output, Does.Not.Contain("   at "), "A settings problem should not print a stack trace");
             }

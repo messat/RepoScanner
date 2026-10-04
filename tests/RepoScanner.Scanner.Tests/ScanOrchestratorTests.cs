@@ -22,6 +22,7 @@ using RepoScanner.Scanner.Configuration;
 using RepoScanner.Scanner.Queue;
 using RepoScanner.Scanner.Sources;
 using RepoScanner.Scanner.Tests.Local;
+using RepoScanner.Scanner.Tests.Logging;
 using RepoScanner.Scanner.Tests.Queue;
 using RepoScanner.Scanner.Tests.Sources;
 
@@ -510,6 +511,89 @@ namespace RepoScanner.Scanner.Tests
                 Assert.That(_logger.LatestRecord.Message,
                     Is.EqualTo("Stopped taking messages from scan-nightly: Azure DevOps refused the token. 0 scanned, 1 failed, 0 skipped, 0 poisoned"));
             }
+        }
+
+        // Issue 10 design, decision 2: the message's lines carry its correlation ID and repository, so one search finds
+        // them among the many repositories one execution scans
+        [Test]
+        public async Task RunAsync_TheLineAboutAReadMessage_CarriesItsCorrelationIdAndRepository()
+        {
+            CreateRepositoryFolder("orders-api");
+            Guid correlationId = new Guid("5b1c6f3e-8a2d-4e7f-9c1a-2d3e4f5a6b7c");
+            _queue.Add(Body("orders-api", OrdersApiId, correlationId));
+
+            await CreateOrchestrator(new StubScanner()).RunAsync(CancellationToken.None);
+
+            FakeLogRecord line = _logger.Collector.GetSnapshot().Single(record => record.Message.StartsWith("Message ", StringComparison.Ordinal));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(LogRecordValues.Scope(line, "CorrelationId"), Is.EqualTo(correlationId));
+                Assert.That(LogRecordValues.Scope(line, "ProjectName"), Is.EqualTo("Lumina"));
+                Assert.That(LogRecordValues.Scope(line, "RepositoryName"), Is.EqualTo("orders-api"));
+            }
+        }
+
+        // A scope left open by a failed scan would put its ID on every line after it, up to the run's last line
+        [Test]
+        public async Task RunAsync_AFailedScanThenAnother_EachLineCarriesItsOwnMessage()
+        {
+            Guid ghostCorrelationId = new Guid("1d2e3f4a-5b6c-4d7e-8f90-a1b2c3d4e5f6");
+            Guid ordersCorrelationId = new Guid("6f5e4d3c-2b1a-4c9d-8e7f-0a1b2c3d4e5f");
+            _queue.Add(Body("Ghost", correlationId: ghostCorrelationId));
+            CreateRepositoryFolder("orders-api");
+            _queue.Add(Body("orders-api", correlationId: ordersCorrelationId));
+
+            await CreateOrchestrator(new StubScanner()).RunAsync(CancellationToken.None);
+
+            IReadOnlyList<FakeLogRecord> records = _logger.Collector.GetSnapshot();
+            FakeLogRecord failure = records.Single(record => record.Level == LogLevel.Warning);
+            FakeLogRecord orders = records.Single(record =>
+                record.Message.StartsWith("Message ", StringComparison.Ordinal) && record.GetStructuredStateValue("RepositoryName") == "orders-api");
+            FakeLogRecord stopped = records.Single(record => record.Message.StartsWith("Stopped taking messages", StringComparison.Ordinal));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(LogRecordValues.Scope(failure, "CorrelationId"), Is.EqualTo(ghostCorrelationId));
+                Assert.That(LogRecordValues.Scope(orders, "CorrelationId"), Is.EqualTo(ordersCorrelationId));
+                Assert.That(LogRecordValues.Scope(stopped, "CorrelationId"), Is.Null);
+            }
+        }
+
+        // Decision 3: a message that cannot be read has no correlation ID to give
+        [Test]
+        public async Task RunAsync_WithAMalformedMessage_ItsLineHasNoScope()
+        {
+            _queue.Add("{ \"hello\": 1 }");
+
+            await CreateOrchestrator(new StubScanner()).RunAsync(CancellationToken.None);
+
+            FakeLogRecord warning = _logger.Collector.GetSnapshot().Single(record => record.Level == LogLevel.Warning);
+            Assert.That(LogRecordValues.Scope(warning, "CorrelationId"), Is.Null);
+        }
+
+        // The lines for a message that is never scanned carry its ID too, so a search on it says what happened
+        [TestCase("skipped")]
+        [TestCase("poisoned")]
+        public async Task RunAsync_TheSkippedAndPoisonedLines_CarryTheirMessagesCorrelationId(string outcome)
+        {
+            CreateRepositoryFolder("orders-api");
+            Guid correlationId = new Guid("2c4e6a8b-0d1f-4b3c-9e5a-7f8b9c0d1e2f");
+            if (outcome == "skipped")
+            {
+                SeedRunningRun(OrdersApiId, startedAgo: TimeSpan.FromMinutes(20));
+                _queue.Add(Body("orders-api", OrdersApiId, correlationId));
+            }
+            else
+            {
+                _queue.Add(Body("orders-api", OrdersApiId, correlationId), dequeueCount: 4);
+            }
+
+            await CreateOrchestrator(new StubScanner()).RunAsync(CancellationToken.None);
+
+            IReadOnlyList<FakeLogRecord> records = _logger.Collector.GetSnapshot();
+            FakeLogRecord line = outcome == "skipped"
+                ? records.Single(record => record.Message.StartsWith("Skipped", StringComparison.Ordinal))
+                : records.Single(record => record.Level == LogLevel.Warning);
+            Assert.That(LogRecordValues.Scope(line, "CorrelationId"), Is.EqualTo(correlationId));
         }
 
         // The services a message's scan uses, as Program registers them, with the in-memory database and the stub

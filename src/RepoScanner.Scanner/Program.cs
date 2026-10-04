@@ -18,13 +18,16 @@ using RepoScanner.Scanner.Configuration;
 using RepoScanner.Scanner.Files;
 using RepoScanner.Scanner.Git;
 using RepoScanner.Scanner.Local;
+using RepoScanner.Scanner.Logging;
 using RepoScanner.Scanner.Packages;
 using RepoScanner.Scanner.Queue;
 using RepoScanner.Scanner.Secrets;
 using RepoScanner.Scanner.Secrets.Rules;
 using RepoScanner.Scanner.Sources;
 using Serilog;
+using Serilog.Configuration;
 using Serilog.Events;
+using Serilog.Formatting.Compact;
 
 namespace RepoScanner.Scanner
 {
@@ -45,9 +48,11 @@ namespace RepoScanner.Scanner
         {
             // Start-up logger: exists before the host is built and after it is disposed, so a
             // failure to start is always logged. The host has its own logger for normal running.
-            Log.Logger = new LoggerConfiguration()
-                .Enrich.WithProperty("SourceContext", typeof(Program).FullName)
-                .WriteTo.Console(outputTemplate: ConsoleOutputTemplate)
+            // JSON or text as the host's is, so a fatal line such as a rejected PAT reaches Log
+            // Analytics as JSON too (#65)
+            LoggerConfiguration startUp = new LoggerConfiguration()
+                .Enrich.WithProperty("SourceContext", typeof(Program).FullName);
+            Log.Logger = WriteToConsole(startUp.WriteTo, ConsoleLogFormat.IsJsonBeforeTheHost(args))
                 .CreateLogger();
 
             try
@@ -139,6 +144,15 @@ namespace RepoScanner.Scanner
             }
         }
 
+        // One CLEF JSON object per line for Log Analytics, with the finished message and every property, or
+        // the readable text line (#65, ADR-028)
+        private static LoggerConfiguration WriteToConsole(LoggerSinkConfiguration writeTo, bool json)
+        {
+            return json
+                ? writeTo.Console(new RenderedCompactJsonFormatter())
+                : writeTo.Console(outputTemplate: ConsoleOutputTemplate);
+        }
+
         // Configures the host without running it, so tests can build it and inspect the services.
         public static HostApplicationBuilder CreateBuilder(string[] args)
         {
@@ -157,7 +171,9 @@ namespace RepoScanner.Scanner
             // Serilog is the only place logs go
             builder.Logging.ClearProviders();
 
-            builder.Services.AddSerilog(logger => logger
+            // Text in Development, JSON elsewhere, unless Scanner:Logging:Format says (#65, ADR-028)
+            bool json = ConsoleLogFormat.IsJson(builder.Configuration[ConsoleLogFormat.SettingName], builder.Environment.EnvironmentName);
+            builder.Services.AddSerilog(logger => WriteToConsole(logger
                 // Our own code logs from Information upwards
                 .MinimumLevel.Information()
                 // Framework messages (e.g. "Application started. Press Ctrl+C") only when they matter
@@ -165,12 +181,23 @@ namespace RepoScanner.Scanner
                 // The host's own "Hosting failed to start" error is not needed: Main logs every
                 // start-up failure once, with the matching exit code
                 .MinimumLevel.Override("Microsoft.Extensions.Hosting", LogEventLevel.Fatal)
+                // Each nuget.org request's own lines, which were most of a run's lines (Issue 10 design,
+                // decision 11). Polly logs a retry as a warning, so retries still show.
+                .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
+                .MinimumLevel.Override("Polly", LogEventLevel.Warning)
                 // Lets later code add properties (e.g. CorrelationId, Issue 10) to every log line in a scope
                 .Enrich.FromLogContext()
-                .WriteTo.Console(outputTemplate: ConsoleOutputTemplate),
+                .WriteTo, json),
                 // Keep the start-up logger in Log.Logger: the host's logger is disposed with the host,
                 // before Main's catch blocks run
                 preserveStaticLogger: true);
+
+            // How the console writes log lines: checked when the host starts, in every mode, so a wrong
+            // Scanner:Logging:Format is one line and exit 2 like any setting (#65)
+            builder.Services.AddOptions<LoggingOptions>()
+                .Bind(builder.Configuration.GetSection(LoggingOptions.SectionName))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
 
             // Database settings: read from the Scanner:Database section and checked when the host starts,
             // like the queue settings. Required in every mode: the scanner's job is to save findings.

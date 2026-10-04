@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -70,7 +71,7 @@ namespace RepoScanner.Scanner.Tests
             {
                 Assert.That(exitCode, Is.EqualTo(2));
                 Assert.That(output, Does.Contain("The queue scan-nightly does not exist"));
-                Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
+                Assert.That(LogLines.Read(output).Count(line => LogLines.Level(line) == "Fatal"), Is.EqualTo(1));
                 Assert.That(output, Does.Not.Contain("   at "), "A missing queue should not print a stack trace");
             }
         }
@@ -94,7 +95,7 @@ namespace RepoScanner.Scanner.Tests
                 {
                     Assert.That(exitCode, Is.EqualTo(2));
                     Assert.That(output, Does.Contain("Scanner:Database:ConnectionString").And.Contain("Scanner:AzureDevOps:Pat"));
-                    Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
+                    Assert.That(LogLines.Read(output).Count(line => LogLines.Level(line) == "Fatal"), Is.EqualTo(1));
                     Assert.That(output, Does.Not.Contain("   at "), "A configuration error should not print a stack trace");
                 }
             }
@@ -150,8 +151,11 @@ namespace RepoScanner.Scanner.Tests
                 using (Assert.EnterMultipleScope())
                 {
                     Assert.That(exitCode, Is.EqualTo(1));
-                    Assert.That(output, Does.Contain("Azure DevOps refused the token, scanner stopped: Azure DevOps refused the token in Scanner:AzureDevOps:Pat"));
-                    Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
+                    Assert.That(LogLines.Read(output).Count(line => LogLines.Level(line) == "Fatal"), Is.EqualTo(1));
+                    // The rejected-PAT alert's pin (Issue 10 design, Searches): it looks for a Fatal line starting with these words
+                    JsonElement fatal = LogLines.Read(output).Single(line => LogLines.Level(line) == "Fatal");
+                    Assert.That(LogLines.Message(fatal), Does.StartWith("Azure DevOps refused the token, scanner stopped:"));
+                    Assert.That(LogLines.Value(fatal, "Problem"), Does.StartWith("Azure DevOps refused the token in Scanner:AzureDevOps:Pat"));
                     Assert.That(output, Does.Not.Contain("   at "), "A rejected PAT should not print a stack trace");
                 }
             }
@@ -282,6 +286,81 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        // Issue 10 design, decision 9: Azure and the container run as Production, so every line is one JSON object for
+        // Log Analytics. @m quotes string values, so the values are checked as properties.
+        [Test]
+        public async Task RunAsync_InProduction_WritesEveryLineAsJson()
+        {
+            string output = await ConsoleCapture.RunAsync(() => Program.RunAsync(ValidArgs, services => services.AddSingleton<IScanQueue>(new FakeScanQueue())));
+
+            IReadOnlyList<JsonElement> lines = LogLines.Read(output);
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(lines, Has.Count.GreaterThanOrEqualTo(2));
+                Assert.That(LogLines.Message(lines[0]), Does.StartWith("Scanner starting in"));
+                Assert.That(LogLines.Value(lines[0], "EnvironmentName"), Is.EqualTo("Production"));
+                Assert.That(LogLines.Value(lines[0], "QueueName"), Is.EqualTo("scan-nightly"));
+            }
+        }
+
+        // dotnet run uses Development, which stays readable text
+        [Test]
+        public async Task RunAsync_InDevelopment_WritesText()
+        {
+            string[] args = ValidArgs.Concat(new[] { "--environment", "Development" }).ToArray();
+
+            string output = await ConsoleCapture.RunAsync(() => Program.RunAsync(args, services => services.AddSingleton<IScanQueue>(new FakeScanQueue())));
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(output, Does.Contain("INF] RepoScanner.Scanner.ScanOrchestrator: Scanner starting in Development"));
+                Assert.That(output.Split('\n').Where(line => line.StartsWith('{')), Is.Empty);
+            }
+        }
+
+        // Scanner__Logging__Format=Text in .env makes the container readable in Docker Desktop
+        [Test]
+        public async Task RunAsync_WithTheFormatSetToText_WritesTextInProduction()
+        {
+            string[] args = ValidArgs.Concat(new[] { "--Scanner:Logging:Format", "Text" }).ToArray();
+
+            string output = await ConsoleCapture.RunAsync(() => Program.RunAsync(args, services => services.AddSingleton<IScanQueue>(new FakeScanQueue())));
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(output, Does.Contain("INF] RepoScanner.Scanner.ScanOrchestrator: Scanner starting in Production"));
+                Assert.That(output.Split('\n').Where(line => line.StartsWith('{')), Is.Empty);
+            }
+        }
+
+        // A wrong format is a settings problem like any other: one line and exit 2
+        [Test]
+        public async Task Main_WithAFormatThatIsNeither_ExitsTwoWithOneLine()
+        {
+            string[] args = ValidArgs.Concat(new[] { "--Scanner:Logging:Format", "Xml" }).ToArray();
+            int exitCode = 0;
+
+            string output = await ConsoleCapture.RunAsync(async () => { exitCode = await Program.Main(args); });
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(2));
+                Assert.That(LogLines.Read(output).Count(line => LogLines.Level(line) == "Fatal"), Is.EqualTo(1));
+                Assert.That(output, Does.Contain("Scanner:Logging:Format must be Text or Json"));
+            }
+        }
+
+        // Review Focus 1: git's errors hold quotes and line breaks, and a stack trace is many lines, yet each event must
+        // stay one line of JSON, or Log Analytics cannot unpack it
+        [Test]
+        public async Task RunAsync_AFailureWithQuotesAndLineBreaks_StaysOneJsonLine()
+        {
+            string output = await ConsoleCapture.RunAsync(() => Program.RunAsync(ValidArgs, services => services.AddHostedService<FailingWithQuotesAndLineBreaksService>()));
+
+            JsonElement fatal = LogLines.Read(output).Single(line => LogLines.Level(line) == "Fatal");
+            Assert.That(LogLines.Value(fatal, "@x"), Does.Contain("git said \"fatal: not found\"").And.Contain("remote: gone"));
+        }
+
         // A lane queue that Azure says does not exist
         internal sealed class MissingQueue : IScanQueue
         {
@@ -307,6 +386,20 @@ namespace RepoScanner.Scanner.Tests
             public Task StartAsync(CancellationToken cancellationToken)
             {
                 throw new InvalidOperationException("Simulated failure");
+            }
+
+            public Task StopAsync(CancellationToken cancellationToken)
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        // The same, with an error that holds quotes and a line break, as git's output does
+        internal sealed class FailingWithQuotesAndLineBreaksService : IHostedService
+        {
+            public Task StartAsync(CancellationToken cancellationToken)
+            {
+                throw new InvalidOperationException("git said \"fatal: not found\"\nremote: gone");
             }
 
             public Task StopAsync(CancellationToken cancellationToken)

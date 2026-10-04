@@ -2,7 +2,7 @@
 
 Each file records one decision: the context that forced it, what was decided, and what follows from it.
 
-ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADRs v2*, which is canonical for those numbers. ADR-020 onwards were decided while building this repository. The next new ADR is **ADR-028**.
+ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADRs v2*, which is canonical for those numbers. ADR-020 onwards were decided while building this repository. The next new ADR is **ADR-029**.
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -17,7 +17,7 @@ ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADR
 | [ADR-009](ADR-009-one-scanner-image.md) | One scanner image | Accepted |
 | [ADR-010](ADR-010-deliberate-rejection-of-complexity.md) | Deliberate rejection of complexity | Accepted |
 | [ADR-011](ADR-011-two-job-definitions-two-queues.md) | Two job definitions, two queues | Accepted, amended 2026-09-24 |
-| [ADR-012](ADR-012-maxexecutions-1-raised-on-evidence.md) | maxExecutions 1, raised on evidence | Accepted |
+| [ADR-012](ADR-012-maxexecutions-1-raised-on-evidence.md) | maxExecutions 1, raised on evidence | Accepted, amended 2026-10-02 |
 | [ADR-013](ADR-013-delete-after-upsert-poison-queue-after-three-failures.md) | Delete after upsert, poison queue after three failures | Accepted, amended 2026-09-30 |
 | [ADR-014](ADR-014-two-runtime-identities.md) | Two runtime identities | Accepted |
 | [ADR-015](ADR-015-azure-sql-basic-in-uk-west.md) | Azure SQL Basic in UK West | Accepted |
@@ -33,6 +33,7 @@ ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADR
 | [ADR-025](ADR-025-auto-resolve-only-for-scanners-that-completed.md) | Only a scanner that completed can resolve its findings | Accepted, amended 2026-09-28 |
 | [ADR-026](ADR-026-package-vulnerabilities-from-nuget-org-without-a-restore.md) | Package vulnerabilities come from nuget.org's vulnerability files, without a restore | Accepted |
 | [ADR-027](ADR-027-skip-a-repository-being-scanned-take-over-an-abandoned-run.md) | Skip a repository that is being scanned; take over a run abandoned for longer than the per-repository timeout plus five minutes | Accepted |
+| [ADR-028](ADR-028-json-log-lines-on-stdout-outside-development.md) | JSON log lines on stdout outside Development | Accepted |
 
 ## Writing a new ADR
 

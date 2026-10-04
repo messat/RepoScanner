@@ -12,6 +12,7 @@ using RepoScanner.Core.Entities;
 using RepoScanner.Core.Enums;
 using RepoScanner.Core.Persistence;
 using RepoScanner.Scanner.Configuration;
+using RepoScanner.Scanner.Logging;
 using RepoScanner.Scanner.Queue;
 using RepoScanner.Scanner.Sources;
 
@@ -132,6 +133,18 @@ namespace RepoScanner.Scanner
                 return;
             }
 
+            // Every line about this request, from any class, carries its correlation ID and repository until its message
+            // is dealt with, so one search finds them among every repository the run scans (#62)
+            using (_logger.BeginScope(ScanLogScope.For(request.CorrelationId, request.ProjectName, request.RepositoryName)))
+            {
+                await HandleRequestAsync(message, request, counts, cancellationToken);
+            }
+        }
+
+        // A message that was read: skipped, poisoned after too many attempts, or scanned, then deleted once its scan run
+        // is saved
+        private async Task HandleRequestAsync(ScanQueueMessage message, ScanRequest request, RunCounts counts, CancellationToken cancellationToken)
+        {
             // A scope per message, so each repository gets a fresh DbContext
             using (IServiceScope scope = _scopes.CreateScope())
             {

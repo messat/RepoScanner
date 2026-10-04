@@ -56,7 +56,7 @@ namespace RepoScanner.Scanner.Tests.Configuration
             {
                 Assert.That(exitCode, Is.EqualTo(2));
                 Assert.That(output, Does.Contain("Scanner:Database:ConnectionString"));
-                Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
+                Assert.That(LogLines.Read(output).Count(line => LogLines.Level(line) == "Fatal"), Is.EqualTo(1));
                 Assert.That(output, Does.Not.Contain("   at "), "A configuration error should not print a stack trace");
             }
         }

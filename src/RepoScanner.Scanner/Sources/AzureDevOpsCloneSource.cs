@@ -60,9 +60,10 @@ namespace RepoScanner.Scanner.Sources
                 // Which commit was scanned, saved as ScanRun.CommitSha (#38)
                 string commitSha = ParseCommitId(await _git.RunAsync(GitCommand.RevParseHead(folder), RevParseTimeLimit, cancellationToken));
 
-                // ADR-016 asks for the free space before and after: the replica's disk is about 2 GiB
+                // ADR-016 asks for the free space before and after: the replica's disk is about 2 GiB. CloneDurationMs, not
+                // DurationMs, which is only ever a whole scan run's time (Issue 10 design, decision 7).
                 _logger.LogInformation(
-                    "Cloned {ProjectName}/{RepositoryName} {Branch} at {CommitSha} in {DurationMs} ms; {FreeMegabytes} MB free on {Drive}, {FreeMegabytesBefore} before",
+                    "Cloned {ProjectName}/{RepositoryName} {Branch} at {CommitSha} in {CloneDurationMs} ms; {FreeMegabytes} MB free on {Drive}, {FreeMegabytesBefore} before",
                     request.ProjectName, request.RepositoryName, request.DefaultBranch, commitSha, duration.ElapsedMilliseconds,
                     FreeMegabytes(folder), Path.GetPathRoot(folder), freeBefore);
 
