@@ -385,8 +385,15 @@ namespace RepoScanner.Scanner.Tests.Packages
         {
             if (OperatingSystem.IsWindows())
             {
-                // Longer than the walker's 8,000-byte binary check, so the walk passes it and the read meets the lock
-                string locked = _folder.WriteText("Locked/Locked.csproj", "<Project>\n<!-- " + new string('x', 20000) + " -->\n</Project>\n");
+                // Longer than the walker's 8,000-byte binary check, so the walk passes it and the read meets the lock.
+                // It declares a package, so a read that wrongly succeeded would show in the result.
+                string locked = _folder.WriteText("Locked/Locked.csproj",
+                    "<Project>\n" +
+                    "  <ItemGroup>\n" +
+                    "    <PackageReference Include=\"Newtonsoft.Json\" Version=\"13.0.1\" />\n" +
+                    "  </ItemGroup>\n" +
+                    "<!-- " + new string('x', 20000) + " -->\n" +
+                    "</Project>\n");
                 WriteProject("Api/Api.csproj", "<PackageReference Include=\"System.Text.Json\" Version=\"8.0.3\" />");
 
                 ProjectFileReadResult result;
