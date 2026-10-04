@@ -60,18 +60,36 @@ namespace RepoScanner.Scanner.CodePatterns.Rules
             return node.IsKind(SyntaxKind.AddExpression) || node is ParenthesizedExpressionSyntax;
         }
 
-        // string.Format, String.Concat, System.String.Format and so on
+        // string.Format, String.Concat, System.String.Format and so on, and a bare Format or Concat after using static
+        // System.String (Issue 11, #69). Without that using, a bare Format is some other method, so it is left alone.
         private static bool IsStringFormatOrConcat(InvocationExpressionSyntax call)
         {
-            if (call.Expression is not MemberAccessExpressionSyntax member)
+            string? method = call.Expression switch
             {
-                return false;
-            }
+                MemberAccessExpressionSyntax member when IsStringType(member.Expression) => member.Name.Identifier.ValueText,
+                IdentifierNameSyntax bare when HasUsingStaticString(call) => bare.Identifier.ValueText,
+                _ => null
+            };
+            return method == "Format" || method == "Concat";
+        }
 
-            string method = member.Name.Identifier.ValueText;
-            bool isString = member.Expression is PredefinedTypeSyntax predefined && predefined.Keyword.IsKind(SyntaxKind.StringKeyword)
-                || SyntaxNames.LastIdentifier(member.Expression) == "String";
-            return isString && (method == "Format" || method == "Concat");
+        private static bool IsStringType(ExpressionSyntax expression)
+        {
+            return expression is PredefinedTypeSyntax predefined && predefined.Keyword.IsKind(SyntaxKind.StringKeyword)
+                || SyntaxNames.LastIdentifier(expression) == "String";
+        }
+
+        // using static System.String (or String) at the top of the file or in a namespace holding the node, including a
+        // file-scoped namespace and a global using. The rule reads one file at a time, so a global using in another
+        // file, such as GlobalUsings.cs, or an alias such as using S = System.String, is not seen.
+        private static bool HasUsingStaticString(SyntaxNode node)
+        {
+            IEnumerable<UsingDirectiveSyntax> usings = node.Ancestors()
+                .OfType<BaseNamespaceDeclarationSyntax>()
+                .SelectMany(space => space.Usings)
+                .Concat(node.SyntaxTree.GetCompilationUnitRoot().Usings);
+            return usings.Any(directive => !directive.StaticKeyword.IsKind(SyntaxKind.None)
+                && SyntaxNames.LastIdentifier(directive.NamespaceOrType) == "String");
         }
 
         private static ExpressionSyntax? WithoutParentheses(ExpressionSyntax? expression)

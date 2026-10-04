@@ -6,7 +6,7 @@ Each finding is marked with a comment naming its rule, such as `// CP001`, and n
 
 | Folder | Rule | Findings | Not findings |
 |---|---|---|---|
-| `Data/` | CP001 SQL built from strings | 5: `+`, `$"{hole}"`, `string.Format`, `new SqlCommand(...)`, `CommandText` in an initialiser | `FromSql`, a join of literals, a `@name` parameter, SQL in a variable |
+| `Data/` | CP001 SQL built from strings | 6: `+`, `$"{hole}"`, `string.Format`, `new SqlCommand(...)`, `CommandText` in an initialiser, a bare `Format(...)` after `using static System.String` | `FromSql`, a join of literals, a `@name` parameter, SQL in a variable, a class's own `Format` method |
 | `Serialization/` | CP002 Insecure deserialization | 6: `BinaryFormatter`, `LosFormatter`, `NetDataContractSerializer`, `ObjectStateFormatter`, `TypeNameHandling.Auto` in settings, `TypeNameHandling.All` in an attribute | `TypeNameHandling.None` |
 | `Http/` | CP003 Certificate validation switched off | 3: `=> true`, `DangerousAcceptAnyServerCertificateValidator`, `+= delegate { return true; }` | A callback that checks the errors |
 | `Crypto/` | CP004 Weak hashing | 3: `MD5.Create()`, `SHA1.HashData(...)`, `new TripleDESCryptoServiceProvider()` | `SHA256.Create()` |
@@ -14,7 +14,7 @@ Each finding is marked with a comment naming its rule, such as `// CP001`, and n
 | `Errors/` | CP006 Empty catch | 2: two empty catches in different methods | A catch with a comment inside, `catch { throw; }` |
 | `Quiet/` | none | 0: every pattern, but only in comments, strings and a `.txt` file | |
 
-That is 21 findings in all. The markers sit outside the code they mark, so they are comments the rules ignore; in `Errors/` they sit outside the braces, where a comment does not count as a reason for a catch being empty.
+That is 22 findings in all. The markers sit outside the code they mark, so they are comments the rules ignore; in `Errors/` they sit outside the braces, where a comment does not count as a reason for a catch being empty.
 
 Scan it with:
 
