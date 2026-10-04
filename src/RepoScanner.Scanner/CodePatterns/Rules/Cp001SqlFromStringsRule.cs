@@ -81,7 +81,9 @@ namespace RepoScanner.Scanner.CodePatterns.Rules
 
         // using static System.String (or String) at the top of the file or in a namespace holding the node, including a
         // file-scoped namespace and a global using. The rule reads one file at a time, so a global using in another
-        // file, such as GlobalUsings.cs, or an alias such as using S = System.String, is not seen.
+        // file, such as GlobalUsings.cs, or an alias such as using S = System.String, is not seen. With no semantic
+        // model, a class's own Format method or a local function named Format is still flagged in a file that has
+        // this using, although C# would call that one instead: a rare false alarm, which can be suppressed.
         private static bool HasUsingStaticString(SyntaxNode node)
         {
             IEnumerable<UsingDirectiveSyntax> usings = node.Ancestors()

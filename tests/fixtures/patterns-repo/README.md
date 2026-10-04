@@ -6,7 +6,7 @@ Each finding is marked with a comment naming its rule, such as `// CP001`, and n
 
 | Folder | Rule | Findings | Not findings |
 |---|---|---|---|
-| `Data/` | CP001 SQL built from strings | 6: `+`, `$"{hole}"`, `string.Format`, `new SqlCommand(...)`, `CommandText` in an initialiser, a bare `Format(...)` after `using static System.String` | `FromSql`, a join of literals, a `@name` parameter, SQL in a variable, a class's own `Format` method |
+| `Data/` | CP001 SQL built from strings | 6: `+`, `$"{hole}"`, `string.Format`, `new SqlCommand(...)`, `CommandText` in an initialiser, a bare `Format(...)` after `using static System.String` | `FromSql`, a join of literals, a `@name` parameter, SQL in a variable, a class's own `Format` method in a file without `using static System.String` |
 | `Serialization/` | CP002 Insecure deserialization | 6: `BinaryFormatter`, `LosFormatter`, `NetDataContractSerializer`, `ObjectStateFormatter`, `TypeNameHandling.Auto` in settings, `TypeNameHandling.All` in an attribute | `TypeNameHandling.None` |
 | `Http/` | CP003 Certificate validation switched off | 3: `=> true`, `DangerousAcceptAnyServerCertificateValidator`, `+= delegate { return true; }` | A callback that checks the errors |
 | `Crypto/` | CP004 Weak hashing | 3: `MD5.Create()`, `SHA1.HashData(...)`, `new TripleDESCryptoServiceProvider()` | `SHA256.Create()` |

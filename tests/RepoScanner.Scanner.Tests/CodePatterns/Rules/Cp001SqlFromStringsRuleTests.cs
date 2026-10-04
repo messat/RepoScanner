@@ -114,6 +114,7 @@ namespace RepoScanner.Scanner.Tests.CodePatterns.Rules
         [TestCase("using static Shop.SqlText; class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } }")]
         [TestCase("namespace A { using static System.String; } namespace B { class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } } }")]
         [TestCase("using static System.String; class R { void Run() { string message = Format(\"Found {0} users\", count); } }")]
+        [TestCase("using S = System.String; class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } }")]
         public void FindMatches_IgnoresABareFormatThatIsNotStrings(string code)
         {
             Assert.That(PatternMatches.In(_rule, code), Is.Empty);

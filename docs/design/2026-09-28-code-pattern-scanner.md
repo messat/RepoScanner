@@ -177,7 +177,7 @@ A finding cites only the Microsoft reference (decision 5). In the messages below
 - an interpolated string with at least one hole: `$"SELECT ... '{name}'"`
 - a call to `string.Format` or `string.Concat`
 
-*2026-10-04 (Issue 11, #69): a bare `Format(...)` or `Concat(...)` is flagged too when the file, or a namespace holding the call, has `using static System.String`. A `global using static` in another file, or an alias such as `using S = System.String`, is not seen, because the rule reads one file at a time.*
+*2026-10-04 (Issue 11, #69): a bare `Format(...)` or `Concat(...)` is flagged too when the file, or a namespace holding the call, has `using static System.String`. A `global using static` in another file, or an alias such as `using S = System.String`, is not seen, because the rule reads one file at a time. In a file that has the `using`, a class's own `Format` method or a local function named `Format` is still flagged, although C# would call that one instead: telling them apart needs a semantic model, so it is a rare false alarm, which can be suppressed (found in Issue 11's review).*
 
 **Does not flag:** `FromSql`, `FromSqlInterpolated`, `ExecuteSql` and `ExecuteSqlInterpolated`, which turn the holes into parameters; a plain literal; `"SELECT " + "1"`; SQL passed in a variable (decision 12).
 
