@@ -91,6 +91,35 @@ namespace RepoScanner.Scanner.Tests.CodePatterns.Rules
             Assert.That(PatternMatches.InMethod(_rule, statement), Is.Empty);
         }
 
+        // A bare Format or Concat is string's own after using static System.String, wherever that using sits (#69)
+        [TestCase("using static System.String; class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } }",
+            "db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id))")]
+        [TestCase("using static System.String; class R { void Run() { db.Users.FromSqlRaw(Concat(\"SELECT * FROM Users WHERE Name = '\", name, \"'\")); } }",
+            "db.Users.FromSqlRaw(Concat(\"SELECT * FROM Users WHERE Name = '\", name, \"'\"))")]
+        [TestCase("using System; using static String; class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } }",
+            "db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id))")]
+        [TestCase("namespace Shop { using static System.String; class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } } }",
+            "db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id))")]
+        [TestCase("namespace Shop; using static System.String; class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } }",
+            "db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id))")]
+        [TestCase("global using static System.String; class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } }",
+            "db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id))")]
+        public void FindMatches_FlagsABareFormatOrConcatAfterUsingStaticString(string code, string expected)
+        {
+            Assert.That(PatternMatches.In(_rule, code), Is.EqualTo(new string[] { expected }));
+        }
+
+        // Without that using, a bare Format is some other method; with it, only the three SQL positions count (#69)
+        [TestCase("class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } }")]
+        [TestCase("using static Shop.SqlText; class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } }")]
+        [TestCase("namespace A { using static System.String; } namespace B { class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } } }")]
+        [TestCase("using static System.String; class R { void Run() { string message = Format(\"Found {0} users\", count); } }")]
+        [TestCase("using S = System.String; class R { void Run() { db.Database.ExecuteSqlRaw(Format(\"DELETE FROM Users WHERE Id = {0}\", id)); } }")]
+        public void FindMatches_IgnoresABareFormatThatIsNotStrings(string code)
+        {
+            Assert.That(PatternMatches.In(_rule, code), Is.Empty);
+        }
+
         // Whether a join holds only literals is checked before the walker goes below the call, so a check that
         // called itself for each + would overflow the stack, and end the process, on a long enough join. The
         // walker then stops with InsufficientExecutionStackException, and the scanner skips the file.

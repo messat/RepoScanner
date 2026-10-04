@@ -28,6 +28,8 @@ namespace RepoScanner.Scanner.Tests.CodePatterns
         [TestCase("class Orders { void Save() { Action later = () => Flag(); } }", "Orders|Save|Flag ( )")]
         [TestCase("class Orders { void Save() { void Local() { Flag(); } } }", "Orders|Save|Flag ( )")]
         [TestCase("Flag();", "||Flag ( )")]
+        [TestCase("[Marker(Flag())] class Orders { }", "Orders||Flag ( )")]
+        [TestCase("class Money { public static Money operator +(Money a, Money b) { Flag(); return a; } }", "Money||Flag ( )")]
         public void Compute_HashesTheTypeTheMemberAndTheTokens(string code, string identity)
         {
             Assert.That(SnippetHash.Compute(FlagCall(code)), Is.EqualTo(Sha256Hex(identity)));
@@ -40,6 +42,16 @@ namespace RepoScanner.Scanner.Tests.CodePatterns
             string code = "class Orders { private readonly Action _first = null, _save = () => { Action inner = () => Flag(); }; }";
 
             Assert.That(SnippetHash.Compute(FlagCall(code)), Is.EqualTo(Sha256Hex("Orders|_save|Flag ( )")));
+        }
+
+        // Code in the declaration but in no field's initialiser, such as an attribute on the field, takes the first
+        // field's name (#68)
+        [Test]
+        public void Compute_InAFieldDeclarationOutsideEveryInitialiser_UsesTheFirstFieldsName()
+        {
+            string code = "class Orders { [Marker(Flag())] private readonly Action _first = null, _save = null; }";
+
+            Assert.That(SnippetHash.Compute(FlagCall(code)), Is.EqualTo(Sha256Hex("Orders|_first|Flag ( )")));
         }
 
         // Reformatting a file, adding lines above the code, or commenting inside it keeps the fingerprint,

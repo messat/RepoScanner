@@ -14,3 +14,7 @@ A Migrate stage before the deploy stage, generating an idempotent script with do
 ## Consequences
 
 Database.Migrate() at startup was rejected on three grounds: it requires the runtime identity to hold ALTER TABLE rights on a database containing client secrets, directly contradicting the tool's own security case; replicas race each other when parallelism is above one; and it re-checks on every execution forever. Destructive changes follow expand/contract - add, migrate code, backfill, remove in a later release - never in one deployment.
+
+## Amendments
+
+**2026-10-04 (Issue 11, ADR-029):** this release has no pipeline, so migrations are applied locally with `dotnet ef database update` (README, Database and migrations). The scanner still never applies them, and destructive changes still follow expand/contract. The decision is otherwise unchanged.

@@ -57,5 +57,16 @@ namespace PatternsRepo.Data
         {
             return _db.Users.FromSqlRaw(sql);
         }
+
+        // Not a finding: this file has no using static System.String, so Format is this class's own method
+        public IQueryable<User> FindByFormattedName(string name)
+        {
+            return _db.Users.FromSqlRaw(Format(name));
+        }
+
+        private static string Format(string name)
+        {
+            return "SELECT * FROM Users WHERE Name = @name";
+        }
     }
 }

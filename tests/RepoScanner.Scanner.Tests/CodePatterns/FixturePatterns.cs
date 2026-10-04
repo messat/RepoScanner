@@ -23,6 +23,9 @@ namespace RepoScanner.Scanner.Tests.CodePatterns
             new FixturePattern("CP004", "Crypto/Checksums.cs", 18),
             new FixturePattern("CP004", "Crypto/Checksums.cs", 23),
 
+            // A bare Format(...) after using static System.String; not this class's own Format in UserQueries
+            new FixturePattern("CP001", "Data/StaticFormatQueries.cs", 13),
+
             // +, $"{hole}", string.Format, new SqlCommand(...) and CommandText in an initialiser; not FromSql, a
             // join of literals, a parameter placeholder or a variable
             new FixturePattern("CP001", "Data/UserQueries.cs", 15),

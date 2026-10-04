@@ -14,3 +14,7 @@ Pipeline identity holds DDL rights and runs once per deployment. Runtime identit
 ## Consequences
 
 Neither the scanner nor the dashboard can alter schema under any circumstances. This split is the substance of the security argument, more so than the use of managed identity on its own.
+
+## Amendments
+
+**2026-10-04 (Issue 11, ADR-029):** this release has no pipeline identity. Locally, `dotnet ef` applies migrations with the developer's own Windows login, and the container's `repo_scanner_local` login holds db_datareader and db_datawriter only (README, Database and migrations), so the scanner still cannot change the schema. The decision is otherwise unchanged.

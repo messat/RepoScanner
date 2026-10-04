@@ -92,6 +92,8 @@ Classes are `sealed` or `static` and follow ADR-021, as in Issues 2 to 6. `Queue
 
 ## Message format (#29)
 
+*2026-10-04 (Issue 11, #101): this example is also [docs/contracts/scan-request.example.json](../contracts/scan-request.example.json), which a scanner test reads. The enqueuer and the dashboard copy that file for their contract tests.*
+
 ```json
 {
   "schemaVersion": 1,
