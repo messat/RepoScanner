@@ -180,7 +180,7 @@ A change that removes or renames something follows expand/contract across releas
 ### Who applies migrations
 
 - **Locally:** you, with `dotnet ef database update` as above.
-- **Azure:** only the pipeline, which generates an idempotent script with `dotnet ef migrations script --idempotent` and applies it before deploying ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md)).
+- **Azure:** not in this release ([ADR-029](docs/adr/ADR-029-this-release-runs-locally-without-pipelines.md)). When it comes, only the pipeline, which generates an idempotent script with `dotnet ef migrations script --idempotent` and applies it before deploying ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md)).
 - **Never the scanner:** it has no rights to change the schema ([ADR-008](docs/adr/ADR-008-two-privilege-levels.md)), so it never calls `Migrate()` or `EnsureCreated()`.
 
 If `dotnet ef` says `Scanner__Database__ConnectionString` is not set, repeat step 2 of the setup and open a new terminal.
@@ -435,7 +435,7 @@ Changing the last lines gives other searches. One repository's lines in the last
 
 ### Alerts
 
-The pipeline creates the alert rules, how often they run and who they tell (Issue 12). They use these two searches, and tests fail if either line they rely on changes.
+The alert rules are not in this release ([ADR-029](docs/adr/ADR-029-this-release-runs-locally-without-pipelines.md)); when a pipeline exists, it creates them, how often they run and who they tell (Issue 12). They use these two searches, and tests fail if either line they rely on changes.
 
 A message moved to a poison queue. Only the two poison lines have `PoisonQueueName`, so the search does not depend on their wording:
 
@@ -516,7 +516,7 @@ Logs:
 - Text lines, in `Development` or with `Scanner__Logging__Format=Text`, can only be searched by their words.
 - The start-up logger reads `Scanner:Logging:Format` from environment variables and the command line only, not from appsettings files.
 - In JSON, Information lines have no `@l`, and `@m` puts string values in quotes.
-- The searches are checked against Log Analytics only once Issue 12 deploys the job; until then, tests check the JSON lines they rely on.
+- The searches are checked against Log Analytics only once the job runs in Azure, which is not in this release (ADR-029); until then, tests check the JSON lines they rely on.
 - Field names are part of the searches and alerts: renaming one breaks any search that uses it.
 
 ## Exit codes

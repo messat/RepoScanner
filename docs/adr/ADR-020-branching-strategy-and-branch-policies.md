@@ -19,3 +19,7 @@ Commit messages are plain sentences starting "This commit ...", ending with the 
 ## Consequences
 
 Every change on `develop` and `main` traces back to a pull request and a work item, and every commit to a task. Self-approval means the review is done by the author, which is an accepted limitation of a one-developer project; the policy still forces the pull request, its description and its linked work item to exist. Anyone granted "Bypass policies when pushing" could still push directly, so that permission is left unassigned. A build validation policy is added once a pipeline exists.
+
+## Amendments
+
+**2026-10-04 (Issue 11, ADR-029):** this release has no pipeline, so no build validation policy is added. `dotnet test RepoScanner.sln`, with its coverage gate, is run before a pull request is completed. The reviewer, linked work item and resolved comments policies stand. The decision is otherwise unchanged.
