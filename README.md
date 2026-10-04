@@ -399,9 +399,9 @@ One run takes every message on its queue, one after another, so its log holds ma
 4. One line per new, reopened and resolved finding.
 5. One summary line, last: `Scan run 7 Completed (Nightly) for Kudos Wall/victim-repo at <commit> in 2748 ms: 14 found, 0 new, 0 reopened, 0 resolved, 0 suppressions expired. Scanners: {...}`. It is a warning ending `Error: ...` when the run is `PartiallyCompleted` or `Failed`, whatever made it fail.
 
-Every one of these lines carries the message's `CorrelationId`, `ProjectName` and `RepositoryName`, so one search finds a scan's lines among the rest. The correlation ID comes from the message: the enqueuer makes one per message, the dashboard one per "Scan now", and `enqueue-local.ps1` one per request; `--path` makes its own. It is also saved as `ScanRuns.CorrelationId`. Only the run's first and last lines, and a message the scanner cannot read, have none.
+Every one of these lines carries the message's `CorrelationId`, `ProjectName` and `RepositoryName`, so one search finds a scan's lines among the rest. The correlation ID comes from the message: the enqueuer makes one per message, the dashboard one per "Scan now", and `enqueue-local.ps1` one per request; `--path` makes its own. It is also saved as `ScanRuns.CorrelationId`. Lines logged before a message is read, or after the run stops, have none: the run's first and last lines, a message the scanner cannot read, and the start-up logger's fatal lines, such as a rejected PAT.
 
-In JSON, `@m` is the finished message, with string values in quotes, `@l` the level (left out for Information), `@x` any exception with its stack trace, and every value in the message is also a field of its own.
+In JSON, `@t` is the time the line was logged, `@m` the finished message, with string values in quotes, `@l` the level (left out for Information), `@x` any exception with its stack trace, and every value in the message is also a field of its own.
 
 ### Reading a container's log locally
 
@@ -417,8 +417,8 @@ One scan, every line:
 ContainerAppConsoleLogs
 | extend e = parse_json(Log)
 | where tostring(e.CorrelationId) == "77438d01-1e66-47ae-a0ed-bd5c86c6f446"
-| project TimeGenerated, Level = tostring(e["@l"]), Message = tostring(e["@m"])
-| order by TimeGenerated asc
+| project Time = todatetime(e["@t"]), Level = coalesce(tostring(e["@l"]), "Information"), Message = tostring(e["@m"])
+| order by Time asc
 ```
 
 Scans that did not complete, in the last day:

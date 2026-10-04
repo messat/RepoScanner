@@ -9,7 +9,8 @@
     its container (README: Run in a container):
 
         dotnet run --project src/RepoScanner.Scanner
-        docker run --rm --env-file .env reposcanner:v1
+        docker rm reposcanner-scan
+        docker run --name reposcanner-scan --env-file .env reposcanner:v1
 
     The scanner clones the repository from Scanner:AzureDevOps:OrganizationUrl, BlacklightInternalsMo in Development
     (Issue 8), so it needs the Scanner__AzureDevOps__Pat user environment variable. This script needs neither: it
@@ -153,4 +154,4 @@ finally {
 
 Write-Host "Added to ${Queue}: $body"
 # Either way of running the scanner reads the same queue, so both are named (Issue 9)
-Write-Host 'Now run the scanner: dotnet run --project src/RepoScanner.Scanner, or in its container: docker run --rm --env-file .env reposcanner:v1'
+Write-Host 'Now run the scanner: dotnet run --project src/RepoScanner.Scanner, or in its container: docker rm reposcanner-scan, then docker run --name reposcanner-scan --env-file .env reposcanner:v1 (README: Build and run)'
