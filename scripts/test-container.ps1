@@ -9,7 +9,8 @@
         4-9    the image builds, runs as a non-root user, has git 2.31 or later, no .NET SDK and no
                Development settings, and its Dockerfile tags every base image with something other than latest
         10-11  a container reaches SQL Server on host.docker.internal:1433 and Azurite on host.docker.internal:10001
-        12     a scan request for the repository is scanned to a Completed or PartiallyCompleted scan run
+        12     a scan request for the repository is scanned to a Completed or PartiallyCompleted scan run, and the
+               scanner's log is JSON, one object per line, with a summary line carrying the request's correlation ID
         13     a second run, on the now empty queue, exits 0 and saves no scan run
 
     Needs Docker Desktop, Azurite and SQL Server running, the Azure CLI (for enqueue-local.ps1), sqlcmd, and a
@@ -99,6 +100,16 @@ function Invoke-Shown {
     param([string] $FilePath, [string[]] $Arguments)
     $ErrorActionPreference = 'Continue'
     & $FilePath @Arguments | Out-Host
+}
+
+# The same, and returns the lines it printed to standard output, for a check that reads the scanner's own log
+# (Issue 10, #100). The comma keeps a one-line result an array.
+function Invoke-Captured {
+    param([string] $FilePath, [string[]] $Arguments)
+    $ErrorActionPreference = 'Continue'
+    $lines = @(& $FilePath @Arguments)
+    $lines | Out-Host
+    return , $lines
 }
 
 # One value from the RepoScanner database, read with Windows authentication, as dotnet ef reads it
@@ -266,10 +277,35 @@ try {
 catch {
     Stop-WithFailure $check "enqueue-local.ps1 failed: $($_.Exception.Message)"
 }
-Invoke-Shown 'docker' @('run', '--rm', '--env-file', $EnvFile, $image)
+# JSON as in Azure, whatever .env says: -e wins over --env-file (Issue 10 design, ADR-028)
+$logLines = Invoke-Captured 'docker' @('run', '--rm', '--env-file', $EnvFile, '-e', 'Scanner__Logging__Format=Json', $image)
 if ($LASTEXITCODE -ne 0) {
     Stop-WithFailure $check "the scanner exited ${LASTEXITCODE}: see its log above (README: Exit codes)"
 }
+
+# Every line is one JSON object, as Log Analytics unpacks it, and the scan's summary line carries this request's
+# correlation ID, so one search on it finds the scan (Issue 10, #100). $entry, not $event, which PowerShell keeps.
+$summary = $null
+$lineNumber = 0
+foreach ($line in $logLines) {
+    $lineNumber++
+    if ([string]::IsNullOrWhiteSpace($line)) {
+        continue
+    }
+    try {
+        $entry = $line | ConvertFrom-Json
+    }
+    catch {
+        Stop-WithFailure $check "line $lineNumber of the scanner's log is not JSON (README: Logs)"
+    }
+    if ($entry.CorrelationId -eq "$correlationId" -and $entry.ScanRunStatus) {
+        $summary = $entry
+    }
+}
+if ($null -eq $summary) {
+    Stop-WithFailure $check "no summary line in the scanner's log has correlation ID $correlationId (README: Logs)"
+}
+
 $scanRun = Invoke-Sql "SELECT Status + '|' + ISNULL(CommitSha, '') + '|' + ISNULL(ErrorMessage, '') FROM ScanRuns WHERE CorrelationId = '$correlationId'"
 if ($LASTEXITCODE -ne 0) {
     Stop-WithFailure $check "sqlcmd could not read ScanRuns on $SqlServer"
@@ -280,6 +316,9 @@ if ($scanRun.Length -eq 0) {
 $status, $commitSha, $errorMessage = $scanRun -split '\|', 3
 if (($status -ne 'Completed' -and $status -ne 'PartiallyCompleted') -or $commitSha -notmatch '^[0-9a-f]{40}$') {
     Stop-WithFailure $check "the scan run is $status, commit '$commitSha': $errorMessage"
+}
+if ($summary.ScanRunStatus -ne $status) {
+    Stop-WithFailure $check "the summary line says $($summary.ScanRunStatus), the scan run $status"
 }
 Write-Pass "$check ($RepositoryName $status at $($commitSha.Substring(0, 7)))"
 

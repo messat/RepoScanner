@@ -335,10 +335,17 @@ docker build -t reposcanner:v1 .
 ```
 
 ```bash
-docker run --rm --env-file .env reposcanner:v1
+docker rm reposcanner-scan
 ```
 
-- The scanner runs as it does in Azure: the `Production` environment, as the non-root user `app`, with every setting from `.env`. `--rm` deletes the stopped container.
+```bash
+docker run --name reposcanner-scan --env-file .env reposcanner:v1
+```
+
+- The scanner runs as it does in Azure: the `Production` environment, as the non-root user `app`, with every setting from `.env`.
+- The stopped container keeps its name and stays, so its log stays in Docker Desktop (see [Logs](#logs)). A name can only be used once, so `docker rm` removes the last run's container first; the first time, Docker says there is no such container, which is harmless.
+- One container takes every message on the queue, one after another, then stops. Each `docker run` is a new container.
+- Its log is JSON, as in Azure. Add `Scanner__Logging__Format=Text` to `.env` to read it as text.
 - The exit code is the scanner's (see [Exit codes](#exit-codes)).
 - With no Development settings, a failed scan's message reappears after 65 minutes, not 1. Add `Scanner__Execution__VisibilityTimeoutMinutes=1` to `.env` to change that.
 
@@ -353,7 +360,7 @@ It stops at the first check that fails, says what to start or fix, and exits 1; 
 - **`.env`:** every line is `NAME=value`, with no quotes, no space at either end of a value, no `<...>` placeholder left, a queue name of `scan-nightly` or `scan-ondemand`, and all five settings there. A problem is named by its line and setting, never its value.
 - **The image:** it builds as `reposcanner:v1`, runs as a non-root user, has git 2.31 or later, no .NET SDK and no Development settings, and every base image in the Dockerfile has a tag other than `latest`.
 - **The connections:** a container reaches SQL Server on `host.docker.internal:1433` and Azurite on `host.docker.internal:10001`.
-- **A real scan:** it sends a request for `victim-repo`, with its own correlation ID, to the queue `.env` names, runs the container, and checks that scan run is `Completed` or `PartiallyCompleted` with a commit ID. Messages already on that queue are scanned too.
+- **A real scan:** it sends a request for `victim-repo`, with its own correlation ID, to the queue `.env` names, runs the container, and checks that scan run is `Completed` or `PartiallyCompleted` with a commit ID, and that the container's log is JSON, one object per line, with a summary line carrying that correlation ID. Messages already on that queue are scanned too.
 - **An empty queue:** a second run exits 0 and saves no scan run.
 
 `-RepositoryName`, `-Tag`, `-SqlServer` and `-EnvFile` change what it uses. It needs Docker Desktop, Azurite and SQL Server running, the Azure CLI (it sends the request with `enqueue-local.ps1`) and sqlcmd, and reads the scan runs with Windows authentication. If PowerShell refuses to run scripts, run it as `powershell -ExecutionPolicy Bypass -File scripts\test-container.ps1`.
@@ -377,6 +384,76 @@ On top of the runtime, the image adds git and its packages (79 MB unpacked) and 
 | With nothing changed | 2 s |
 
 The project files are copied and restored before the code, so the restore step stays `CACHED` until something copied before it changes: a `.csproj`, `Directory.Packages.props` (the package versions), `Directory.Build.props`, `global.json` or `.editorconfig`. A change to the code alone never re-runs it. Installing git is `CACHED` until the runtime image changes.
+
+## Logs
+
+The scanner writes its log to the console. `dotnet run`, which uses `Development`, prints readable text; everywhere else, the container and Azure included, each line is one JSON object, because Container Apps sends each line to Log Analytics, which can then search any field ([ADR-028](docs/adr/ADR-028-json-log-lines-on-stdout-outside-development.md), [Issue 10 design](docs/design/2026-10-02-observability-and-run-summary.md)). `Scanner:Logging:Format` (`Text` or `Json`) overrides that.
+
+### What one scan logs
+
+One run takes every message on its queue, one after another, so its log holds many repositories. For each one, in order:
+
+1. `Message ... for Kudos Wall/victim-repo, correlation ..., attempt 1`
+2. `Cloned Kudos Wall/victim-repo main at <commit> in ... ms`
+3. For each scanner: its own line, saying how many files it read and what it skipped, then one line in the same shape for all three, such as `Package scanner Succeeded in 812 ms: 4 findings`. A scanner that failed has a warning here, with its error.
+4. One line per new, reopened and resolved finding.
+5. One summary line, last: `Scan run 7 Completed (Nightly) for Kudos Wall/victim-repo at <commit> in 2748 ms: 14 found, 0 new, 0 reopened, 0 resolved, 0 suppressions expired. Scanners: {...}`. It is a warning ending `Error: ...` when the run is `PartiallyCompleted` or `Failed`, whatever made it fail.
+
+Every one of these lines carries the message's `CorrelationId`, `ProjectName` and `RepositoryName`, so one search finds a scan's lines among the rest. The correlation ID comes from the message: the enqueuer makes one per message, the dashboard one per "Scan now", and `enqueue-local.ps1` one per request; `--path` makes its own. It is also saved as `ScanRuns.CorrelationId`. Only the run's first and last lines, and a message the scanner cannot read, have none.
+
+In JSON, `@m` is the finished message, with string values in quotes, `@l` the level (left out for Information), `@x` any exception with its stack trace, and every value in the message is also a field of its own.
+
+### Reading a container's log locally
+
+There is no Log Analytics on this machine. Run the container with a name, as in [Build and run](#build-and-run), then in Docker Desktop open **Containers**, the `reposcanner-scan` container, then **Logs**. Its search box finds a correlation ID; `docker logs reposcanner-scan` prints the same log.
+
+### Searching in Log Analytics
+
+Each line is in the `Log` column of `ContainerAppConsoleLogs` as text, so a search first unpacks it with `parse_json`.
+
+One scan, every line:
+
+```kusto
+ContainerAppConsoleLogs
+| extend e = parse_json(Log)
+| where tostring(e.CorrelationId) == "77438d01-1e66-47ae-a0ed-bd5c86c6f446"
+| project TimeGenerated, Level = tostring(e["@l"]), Message = tostring(e["@m"])
+| order by TimeGenerated asc
+```
+
+Scans that did not complete, in the last day:
+
+```kusto
+ContainerAppConsoleLogs
+| where TimeGenerated > ago(1d)
+| extend e = parse_json(Log)
+| where isnotempty(tostring(e.ScanRunStatus)) and tostring(e.ScanRunStatus) != "Completed"
+| project TimeGenerated, Repository = tostring(e.RepositoryName), Status = tostring(e.ScanRunStatus), Error = tostring(e.ErrorMessage), CorrelationId = tostring(e.CorrelationId)
+```
+
+Changing the last lines gives other searches. One repository's lines in the last day: `where TimeGenerated > ago(1d) and tostring(e.RepositoryName) == "Kudos-Wall"`. Slow scans: `where toint(e.DurationMs) > 600000`. Each scanner's average time: `summarize avg(toint(e.ScannerDurationMs)) by tostring(e.ScannerType)`.
+
+### Alerts
+
+The pipeline creates the alert rules, how often they run and who they tell (Issue 12). They use these two searches, and tests fail if either line they rely on changes.
+
+A message moved to a poison queue. Only the two poison lines have `PoisonQueueName`, so the search does not depend on their wording:
+
+```kusto
+ContainerAppConsoleLogs
+| extend e = parse_json(Log)
+| where tostring(e["@l"]) == "Warning" and isnotempty(tostring(e.PoisonQueueName))
+| project TimeGenerated, ContainerGroupName, Message = tostring(e["@m"])
+```
+
+A rejected PAT, which stops the run:
+
+```kusto
+ContainerAppConsoleLogs
+| extend e = parse_json(Log)
+| where tostring(e["@l"]) == "Fatal" and tostring(e["@m"]) startswith "Azure DevOps refused the token"
+| project TimeGenerated, ContainerGroupName, Message = tostring(e["@m"])
+```
 
 ## Known limitations
 
@@ -431,6 +508,16 @@ The container:
 - `.env` holds the PAT and the SQL password in plain text. It is git-ignored and kept out of the image, but anyone who can read the repository folder can read it.
 - The image is built for this machine's platform, linux/amd64, which is what Container Apps runs.
 - Nothing starts the container when a message arrives; you run it. `--path` is not supported in the container.
+
+Logs:
+
+- Lines logged before a message is read, or after the loop stops, have no correlation ID or repository.
+- The file walker logs its `Found ... files` line once per scanner, so three times per scan, because each scanner walks the files itself. It is left as it is: each line says what that walk skipped.
+- Text lines, in `Development` or with `Scanner__Logging__Format=Text`, can only be searched by their words.
+- The start-up logger reads `Scanner:Logging:Format` from environment variables and the command line only, not from appsettings files.
+- In JSON, Information lines have no `@l`, and `@m` puts string values in quotes.
+- The searches are checked against Log Analytics only once Issue 12 deploys the job; until then, tests check the JSON lines they rely on.
+- Field names are part of the searches and alerts: renaming one breaks any search that uses it.
 
 ## Exit codes
 

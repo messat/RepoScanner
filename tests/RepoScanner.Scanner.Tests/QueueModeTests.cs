@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -271,6 +272,98 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        // Issue 10 criterion 1: one search on a correlation ID returns every line of its scan, and only its lines. A scan
+        // that works and a clone that fails, as one nightly run would hold both.
+        [Test]
+        public async Task Issue10_EveryLineOfAScan_CarriesItsOwnCorrelationIdAndRepository()
+        {
+            string scanned = "8e1f2a3b-4c5d-4e6f-9a0b-1c2d3e4f5a6b";
+            string failed = "3a4b5c6d-7e8f-4a0b-9c1d-2e3f4a5b6c7d";
+            _queue.Add(Body("secrets-repo", correlationId: new Guid(scanned)));
+            _queue.Add(Body("ghost", GhostId, new Guid(failed)));
+
+            (int exitCode, string output) = await RunAsync("scan-nightly");
+
+            List<JsonElement> lines = LogLines.Read(output).ToList();
+            List<JsonElement> scannedLines = lines.Where(line => LogLines.Value(line, "CorrelationId") == scanned).ToList();
+            List<JsonElement> failedLines = lines.Where(line => LogLines.Value(line, "CorrelationId") == failed).ToList();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(0));
+                Assert.That(lines.Where(line => LogLines.Value(line, "CorrelationId") == null).Select(LogLines.Message)
+                        .Where(message => !message.StartsWith("Scanner starting", StringComparison.Ordinal)
+                            && !message.StartsWith("Stopped taking messages", StringComparison.Ordinal)),
+                    Is.Empty, "only the run's first and last lines have no scan");
+                Assert.That(scannedLines.Select(line => LogLines.Value(line, "RepositoryName")), Is.All.EqualTo("secrets-repo"));
+                Assert.That(failedLines.Select(line => LogLines.Value(line, "RepositoryName")), Is.All.EqualTo("ghost"));
+                Assert.That(lines.IndexOf(scannedLines[^1]), Is.LessThan(lines.IndexOf(failedLines[0])), "one scan after the other");
+
+                // The summary ends what the scan itself logs; for the failed clone, the loop then says it will try again
+                Assert.That(LogLines.Message(LastFromTheScanRunner(scannedLines)), Does.StartWith("Scan run "));
+                Assert.That(LogLines.Message(LastFromTheScanRunner(failedLines)), Does.StartWith("Scan run "));
+                Assert.That(LogLines.Message(failedLines[^1]), Does.StartWith("Scan of "));
+            }
+        }
+
+        // Issue 10 criterion 2: each scan ends with one summary line saying how it went
+        [Test]
+        public async Task Issue10_EachScan_HasOneSummaryLine()
+        {
+            string scanned = "5d6e7f8a-9b0c-4d1e-8f2a-3b4c5d6e7f8a";
+            string failed = "0f1e2d3c-4b5a-4968-8776-655443322110";
+            _queue.Add(Body("secrets-repo", correlationId: new Guid(scanned)));
+            _queue.Add(Body("ghost", GhostId, new Guid(failed)));
+
+            (_, string output) = await RunAsync("scan-nightly");
+
+            JsonElement[] summaries = LogLines.Read(output).Where(line => LogLines.Message(line).StartsWith("Scan run ", StringComparison.Ordinal)).ToArray();
+            JsonElement completed = summaries.Single(line => LogLines.Value(line, "CorrelationId") == scanned);
+            JsonElement failedClone = summaries.Single(line => LogLines.Value(line, "CorrelationId") == failed);
+            JsonElement statuses = completed.GetProperty("ScannerStatuses");
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(summaries, Has.Length.EqualTo(2));
+                Assert.That(LogLines.Level(completed), Is.EqualTo("Information"));
+                Assert.That(LogLines.Value(completed, "ScanRunStatus"), Is.EqualTo("Completed"));
+                Assert.That(LogLines.Value(completed, "CommitSha"), Is.EqualTo(_commitId));
+                Assert.That(statuses.GetProperty("Secret").GetString(), Is.EqualTo("Succeeded"));
+                Assert.That(statuses.GetProperty("Package").GetString(), Is.EqualTo("Succeeded"));
+                Assert.That(statuses.GetProperty("CodePattern").GetString(), Is.EqualTo("Succeeded"));
+                Assert.That(LogLines.Level(failedClone), Is.EqualTo("Warning"));
+                Assert.That(LogLines.Value(failedClone, "ScanRunStatus"), Is.EqualTo("Failed"));
+                Assert.That(LogLines.Value(failedClone, "CommitSha"), Is.Null);
+                Assert.That(LogLines.Value(failedClone, "ErrorMessage"), Does.Contain("git clone failed with exit code 128"));
+                Assert.That(LogLines.Value(failedClone, "ScannerStatuses"), Is.EqualTo("{}"));
+            }
+        }
+
+        // The poison alert's pin (Issue 10 design, Searches): it looks for Warning lines that have a PoisonQueueName,
+        // whether the message could not be read or was tried too many times
+        [Test]
+        public async Task Issue10_ThePoisonLines_AreWarningsWithPoisonQueueName()
+        {
+            _queue.Add("{\"hello: 1}");
+            _queue.Add(Body("secrets-repo"), dequeueCount: 4);
+
+            (_, string output) = await RunAsync("scan-nightly");
+
+            JsonElement[] poisoned = LogLines.Read(output).Where(line => LogLines.Value(line, "PoisonQueueName") != null).ToArray();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(poisoned, Has.Length.EqualTo(2));
+                Assert.That(poisoned.Select(line => LogLines.Value(line, "PoisonQueueName")), Is.All.EqualTo("scan-nightly-poison"));
+                Assert.That(poisoned.Select(LogLines.Level), Is.All.EqualTo("Warning"));
+                Assert.That(poisoned.Select(LogLines.Message), Is.All.StartsWith("Message "));
+                Assert.That(LogLines.Value(poisoned[1], "RepositoryName"), Is.EqualTo("secrets-repo"));
+            }
+        }
+
+        // The last line a scan's own code logged, before the queue loop decides what happens to its message
+        private static JsonElement LastFromTheScanRunner(List<JsonElement> lines)
+        {
+            return lines.Last(line => LogLines.Value(line, "SourceContext") == typeof(RepositoryScanRunner).FullName);
+        }
+
         // The program as dotnet run starts it in queue mode. The organisation is the folder of bare repositories, so a
         // message for Lumina/secrets-repo clones the bare copy of tests/fixtures/secrets-repo. The clones go in a test
         // folder, never the real %TEMP%\reposcanner.
@@ -319,9 +412,9 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
-        private static string Body(string repositoryName, Guid? repositoryId = null)
+        private static string Body(string repositoryName, Guid? repositoryId = null, Guid? correlationId = null)
         {
-            return "{\"schemaVersion\": 1, \"correlationId\": \"" + Guid.NewGuid() + "\", \"repositoryId\": \"" + (repositoryId ?? SecretsRepoId)
+            return "{\"schemaVersion\": 1, \"correlationId\": \"" + (correlationId ?? Guid.NewGuid()) + "\", \"repositoryId\": \"" + (repositoryId ?? SecretsRepoId)
                 + "\", \"projectName\": \"Lumina\", \"repositoryName\": \"" + repositoryName + "\", \"defaultBranch\": \"develop\"}";
         }
     }
