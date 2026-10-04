@@ -405,6 +405,69 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
+        // Issue 11 (#68): an empty repository through the whole program. The walker's own test covers an empty
+        // folder; this one checks every scanner and the saved run.
+        [Test]
+        public async Task Path_OnAnEmptyFolder_CompletesWithNoFindings()
+        {
+            using (TempFolder folder = new TempFolder())
+            {
+                (int exitCode, _) = await RunAsync("--path", folder.FullPath);
+
+                using (ScannerDbContext context = _database.CreateContext())
+                {
+                    ScanRun run = context.ScanRuns.Include(saved => saved.ScannerResults).Single();
+
+                    using (Assert.EnterMultipleScope())
+                    {
+                        Assert.That(exitCode, Is.EqualTo(0));
+                        Assert.That(run.Status, Is.EqualTo(ScanRunStatus.Completed));
+                        Assert.That(run.NewCount, Is.Zero);
+                        Assert.That(context.Findings, Is.Empty);
+                        Assert.That(run.ScannerResults, Has.Count.EqualTo(3));
+                        Assert.That(run.ScannerResults.Select(result => result.Status), Is.All.EqualTo(ScannerStatus.Succeeded));
+                        Assert.That(run.ScannerResults.Select(result => result.FindingCount), Is.All.EqualTo(0));
+                        Assert.That(_nuGet.Requests, Is.Empty);
+                    }
+                }
+            }
+        }
+
+        // Issue 11 (#68): a minified file is one long line. Each secret pattern stops after 1 second and is then
+        // skipped for that file, so a slow pattern would miss a secret at the end without failing the scan.
+        [Test]
+        public async Task Path_OnAFileWithOneHugeLine_FindsTheSecretAtItsEnd()
+        {
+            // The largest file the walker scans
+            const int LargestScannedFile = 1048576;
+            const string PlantedValue = "FAKE-Huge-Line-Pa55word";
+
+            // Separate literals, and a constant whose name is not a secret word, so this repository's own scan
+            // (SEC003 and SEC007) does not report this file.
+            // The comma keeps a word boundary before Server wherever the filler is cut.
+            string tail = ",Server=db01;Database=Orders;" + "Password=" + PlantedValue;
+            string filler = string.Concat(Enumerable.Repeat("{\"id\":1,\"name\":\"item\"},", 50000));
+
+            using (TempFolder folder = new TempFolder())
+            {
+                string path = folder.WriteText("wwwroot/app.min.js", filler.Substring(0, LargestScannedFile - tail.Length) + tail);
+
+                (int exitCode, string output) = await RunAsync("--path", folder.FullPath);
+
+                List<Finding> findings = SavedFindings();
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(new FileInfo(path).Length, Is.EqualTo(LargestScannedFile));
+                    Assert.That(exitCode, Is.EqualTo(0));
+                    Assert.That(findings.Select(finding => (finding.RuleId, finding.FilePath, finding.LineNumber)),
+                        Is.EqualTo(new[] { ("SEC003", "wwwroot/app.min.js", (int?)1) }));
+                    Assert.That(findings.Single().SecretHash, Is.EqualTo(SecretHasher.Hash(PlantedValue)));
+                    Assert.That(LastRun().Status, Is.EqualTo(ScanRunStatus.Completed));
+                    Assert.That(output, Does.Not.Contain("timed out"));
+                }
+            }
+        }
+
         private async Task<(int ExitCode, string Output)> RunAsync(params string[] args)
         {
             int exitCode = 0;

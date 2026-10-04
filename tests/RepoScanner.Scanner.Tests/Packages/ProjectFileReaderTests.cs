@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -374,6 +376,37 @@ namespace RepoScanner.Scanner.Tests.Packages
             ProjectFileReadResult result = await ReadAsync();
 
             Assert.That(result.ProjectFileCount, Is.Zero);
+        }
+
+        // Issue 11 (#68): another program locks part of a project file after the walk has read its start, so the
+        // read fails. Only Windows makes other readers respect a lock on part of a file.
+        [Test]
+        public async Task ReadAsync_AProjectFileThatCannotBeRead_IsSkippedAndTheOthersAreRead()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                // Longer than the walker's 8,000-byte binary check, so the walk passes it and the read meets the lock
+                string locked = _folder.WriteText("Locked/Locked.csproj", "<Project>\n<!-- " + new string('x', 20000) + " -->\n</Project>\n");
+                WriteProject("Api/Api.csproj", "<PackageReference Include=\"System.Text.Json\" Version=\"8.0.3\" />");
+
+                ProjectFileReadResult result;
+                using (FileStream holder = new FileStream(locked, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                {
+                    holder.Lock(10000, 1000);
+                    result = await ReadAsync();
+                }
+
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(result.Packages.Select(package => package.PackageId), Is.EqualTo(new[] { "System.Text.Json" }));
+                    Assert.That(result.ProjectFileCount, Is.EqualTo(2));
+                    Assert.That(result.InvalidFileCount, Is.Zero);
+                }
+            }
+            else
+            {
+                Assert.Ignore("Only Windows makes other readers respect a lock on part of a file");
+            }
         }
 
         // A project whose items are on line 3 onwards
