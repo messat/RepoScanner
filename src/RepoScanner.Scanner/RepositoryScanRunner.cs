@@ -11,6 +11,7 @@ using RepoScanner.Core.Entities;
 using RepoScanner.Core.Enums;
 using RepoScanner.Core.Persistence;
 using RepoScanner.Core.Scanning;
+using RepoScanner.Scanner.Logging;
 using RepoScanner.Scanner.Reconciliation;
 using RepoScanner.Scanner.Sources;
 
@@ -44,6 +45,17 @@ namespace RepoScanner.Scanner
         // Failed and is rethrown. Going over timeLimit is rethrown as a TimeoutException, so the queue loop can tell
         // it from the job being stopped. timeLimit is null for --path.
         public async Task RunAsync(RepositoryDetails repository, ScanTrigger trigger, Guid correlationId,
+            Func<CancellationToken, Task<RepositoryWorkspace>> openWorkspace, TimeSpan? timeLimit, CancellationToken cancellationToken)
+        {
+            // Every line of the scan, from any class, carries its correlation ID and repository (#62). The queue loop has
+            // opened the same scope already; for --path this is the only one.
+            using (_logger.BeginScope(ScanLogScope.For(correlationId, repository.ProjectName, repository.Name)))
+            {
+                await ScanAsync(repository, trigger, correlationId, openWorkspace, timeLimit, cancellationToken);
+            }
+        }
+
+        private async Task ScanAsync(RepositoryDetails repository, ScanTrigger trigger, Guid correlationId,
             Func<CancellationToken, Task<RepositoryWorkspace>> openWorkspace, TimeSpan? timeLimit, CancellationToken cancellationToken)
         {
             ScanRun scanRun = await _scanRuns.StartRunAsync(repository, trigger, correlationId, DateTime.UtcNow, cancellationToken);

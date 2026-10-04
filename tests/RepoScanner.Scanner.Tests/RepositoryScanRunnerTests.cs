@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -16,6 +17,7 @@ using RepoScanner.Data;
 using RepoScanner.Data.Repositories;
 using RepoScanner.Scanner.Sources;
 using RepoScanner.Scanner.Tests.Local;
+using RepoScanner.Scanner.Tests.Logging;
 
 namespace RepoScanner.Scanner.Tests
 {
@@ -30,6 +32,9 @@ namespace RepoScanner.Scanner.Tests
 
         // The repository the scan is about, as a queue message would describe it
         private static readonly RepositoryDetails Repository = new RepositoryDetails(new Guid("0f8fad5b-d9cb-469f-a165-70867728950e"), "Lumina", "orders-api", "develop");
+
+        // The message's correlation ID, given to every scan these tests run
+        private static readonly Guid CorrelationId = new Guid("9a7b3c1d-2e4f-4a6b-8c0d-1e2f3a4b5c6d");
 
         private SqliteTestDatabase _database = null!;
         private FakeLogger<RepositoryScanRunner> _logger = null!;
@@ -529,6 +534,36 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        // Issue 10 design, decision 2: one search on a correlation ID or repository finds every line of the scan
+        [Test]
+        public async Task RunAsync_EveryLineItLogs_CarriesTheScansCorrelationIdAndRepository()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "src/appsettings.json", 3, "hash-a")));
+
+            IReadOnlyList<FakeLogRecord> records = _logger.Collector.GetSnapshot();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(records, Is.Not.Empty);
+                Assert.That(records.Select(record => LogRecordValues.Scope(record, "CorrelationId")), Is.All.EqualTo(CorrelationId));
+                Assert.That(records.Select(record => LogRecordValues.Scope(record, "ProjectName")), Is.All.EqualTo("Lumina"));
+                Assert.That(records.Select(record => LogRecordValues.Scope(record, "RepositoryName")), Is.All.EqualTo("orders-api"));
+            }
+        }
+
+        // The failure path too, since a failed scan is what someone searches the log for
+        [Test]
+        public async Task RunAsync_WhenAScannerFails_ItsWarningsCarryTheCorrelationId()
+        {
+            await RunAsync(new StubScanner(), FailingPackageScanner("nuget.org data could not be downloaded"));
+
+            FakeLogRecord[] warnings = _logger.Collector.GetSnapshot().Where(record => record.Level == LogLevel.Warning).ToArray();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(warnings, Is.Not.Empty);
+                Assert.That(warnings.Select(record => LogRecordValues.Scope(record, "CorrelationId")), Is.All.EqualTo(CorrelationId));
+            }
+        }
+
         [Test]
         public async Task RunAsync_ScansTheWorkspacesFolder()
         {
@@ -775,7 +810,7 @@ namespace RepoScanner.Scanner.Tests
             {
                 RepositoryScanRunner runner = new RepositoryScanRunner(new ScanRunRepository(context), new FindingRepository(context), scanners, _time, _logger);
 
-                await runner.RunAsync(Repository, ScanTrigger.OnDemand, Guid.NewGuid(), openWorkspace, timeLimit, cancellationToken);
+                await runner.RunAsync(Repository, ScanTrigger.OnDemand, CorrelationId, openWorkspace, timeLimit, cancellationToken);
             }
         }
 
