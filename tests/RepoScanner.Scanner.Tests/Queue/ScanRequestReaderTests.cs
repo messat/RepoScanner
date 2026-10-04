@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using NUnit.Framework;
@@ -27,6 +28,28 @@ namespace RepoScanner.Scanner.Tests.Queue
         public void TryRead_AValidMessage_ReturnsEveryField()
         {
             bool read = ScanRequestReader.TryRead(Message(), out ScanRequest? request, out string? problem);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(read, Is.True);
+                Assert.That(problem, Is.Null);
+                Assert.That(request, Is.EqualTo(new ScanRequest(
+                    new Guid("5b1c6f3e-8a2d-4e7f-9c1a-2d3e4f5a6b7c"),
+                    new Guid("0f8fad5b-d9cb-469f-a165-70867728950e"),
+                    "Lumina",
+                    "RepoScanner",
+                    "develop")));
+            }
+        }
+
+        // The file the enqueuer and the dashboard copy for their contract tests (#101). If it stops being accepted,
+        // they would be copying a message the scanner poisons.
+        [Test]
+        public void TryRead_TheExampleInDocs_IsAccepted()
+        {
+            string body = File.ReadAllText(Path.Combine(RepositoryRoot.FullPath, "docs", "contracts", "scan-request.example.json"));
+
+            bool read = ScanRequestReader.TryRead(body, out ScanRequest? request, out string? problem);
 
             using (Assert.EnterMultipleScope())
             {
