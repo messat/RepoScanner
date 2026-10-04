@@ -9,6 +9,7 @@ using NUnit.Framework;
 using RepoScanner.Core.Entities;
 using RepoScanner.Core.Enums;
 using RepoScanner.Data;
+using RepoScanner.Scanner.Local;
 using RepoScanner.Scanner.Secrets;
 using RepoScanner.Scanner.Tests.CodePatterns;
 using RepoScanner.Scanner.Tests.Packages;
@@ -329,6 +330,25 @@ namespace RepoScanner.Scanner.Tests.Local
                     Assert.That(context.Findings.Count(finding => finding.ScannerType == ScannerType.Package), Is.EqualTo(FixturePackages.All.Count));
                     Assert.That(output, Does.Contain("PartiallyCompleted"));
                 }
+            }
+        }
+
+        // Issue 10 review: a --path scan's lines carry its correlation ID and folder through the whole program too, so a
+        // local scan is as searchable as a queued one; the ID is the one its scan run saved
+        [Test]
+        public async Task Path_EveryLineOfTheScan_CarriesItsCorrelationIdAndFolder()
+        {
+            (int exitCode, string output) = await RunAsync("--path", FixtureSecrets.FolderPath);
+
+            IReadOnlyList<JsonElement> lines = LogLines.Read(output);
+            string correlationId = LastRun().CorrelationId.ToString();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(0));
+                Assert.That(lines, Is.Not.Empty);
+                Assert.That(lines.Select(line => LogLines.Value(line, "CorrelationId")), Is.All.EqualTo(correlationId));
+                Assert.That(lines.Select(line => LogLines.Value(line, "ProjectName")), Is.All.EqualTo(LocalScanRunner.LocalProjectName));
+                Assert.That(lines.Select(line => LogLines.Value(line, "RepositoryName")), Is.All.EqualTo("secrets-repo"));
             }
         }
 
