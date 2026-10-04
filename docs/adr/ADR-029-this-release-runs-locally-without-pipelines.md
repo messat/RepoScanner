@@ -12,7 +12,7 @@ ADR-017 has everything run locally before anything moves to Azure. The board the
 
 This release runs locally only: Azurite for the queues, SQL Server Express (`.\SQLEXPRESS`) for the database, and Docker Desktop for the scanner's container. No CI/CD pipeline is built and no Azure resource is created. The three pipeline Issues stay on the board, tagged `out-of-scope` and kept at the bottom, so they can come back if the EPA needs evidence of an automated build or deployment.
 
-The enqueuer and the dashboard keep their own repositories, as planned. Each app keeps its own code and history, and the message format is the one thing the enqueuer shares with the scanner: it copies `docs/contracts/scan-request.example.json` for its contract test (Issue 11, #101). How each repository is set up stays with #102 and #93.
+The enqueuer and the dashboard keep their own repositories, as planned. Each app keeps its own code and history. The message format is the one thing the enqueuer shares with the scanner, and the dashboard sends the same message for Scan now: both copy `docs/contracts/scan-request.example.json` for their contract tests (Issue 11, #101; enqueuer #81, dashboard #88). How each repository is set up stays with #102 and #93.
 
 ## Consequences
 
