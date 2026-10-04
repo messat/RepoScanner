@@ -72,7 +72,11 @@ namespace RepoScanner.Scanner
             using (CancellationTokenSource scan = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token))
             {
                 CancellationToken scanToken = scan.Token;
-                Stopwatch duration = Stopwatch.StartNew();
+
+                // From the clock the time limit uses, so tests can move it; read once the outcome is saved, so the
+                // summary's DurationMs matches ScanRuns' times and leaves out deleting the clone (Issue 10 review)
+                long started = _timeProvider.GetTimestamp();
+                long durationMs = 0;
 
                 // Set once the run's outcome is saved, so a failure rethrown after that is not recorded a second time
                 bool recorded = false;
@@ -160,6 +164,7 @@ namespace RepoScanner.Scanner
                             await _scanRuns.CompleteRunAsync(scanRun.Id, failed, scanToken);
                             recorded = true;
                             outcome = failed;
+                            durationMs = MillisecondsSince(started);
 
                             ExceptionDispatchInfo.Throw(firstFailure);
                         }
@@ -181,6 +186,7 @@ namespace RepoScanner.Scanner
                         await _scanRuns.CompleteRunAsync(scanRun.Id, completion, scanToken);
                         recorded = true;
                         outcome = completion;
+                        durationMs = MillisecondsSince(started);
                         foundCount = found.Count;
                         suppressionExpiredCount = reconciliation.SuppressionExpiredCount;
                     }
@@ -193,11 +199,13 @@ namespace RepoScanner.Scanner
                         + " minutes and was stopped (Scanner:Execution:ScanTimeoutPerRepoMinutes)",
                         exception);
                     outcome = await RecordFailureAsync(scanRun.Id, timedOut, commitSha);
+                    durationMs = MillisecondsSince(started);
                     throw timedOut;
                 }
                 catch (Exception exception) when (!recorded)
                 {
                     outcome = await RecordFailureAsync(scanRun.Id, exception, commitSha);
+                    durationMs = MillisecondsSince(started);
                     throw;
                 }
                 finally
@@ -206,10 +214,16 @@ namespace RepoScanner.Scanner
                     // run ended, rethrown failures included (#64)
                     if (outcome != null)
                     {
-                        LogSummary(scanRun.Id, repository, trigger, outcome, results, foundCount, suppressionExpiredCount, duration.ElapsedMilliseconds);
+                        LogSummary(scanRun.Id, repository, trigger, outcome, results, foundCount, suppressionExpiredCount, durationMs);
                     }
                 }
             }
+        }
+
+        // Whole milliseconds on the runner's clock since a GetTimestamp reading
+        private long MillisecondsSince(long started)
+        {
+            return (long)_timeProvider.GetElapsedTime(started).TotalMilliseconds;
         }
 
         // The scan run's last line, whatever its outcome (#64, Issue 10 design, decisions 5 and 6): what a reader needs to
@@ -217,8 +231,14 @@ namespace RepoScanner.Scanner
         private void LogSummary(int scanRunId, RepositoryDetails repository, ScanTrigger trigger, ScanRunCompletion completion,
             IReadOnlyList<ScannerResult> results, int foundCount, int suppressionExpiredCount, long durationMs)
         {
-            // Scanner type to status, in the order they ran: an object such as {"Package":"Failed"} in JSON
-            Dictionary<string, string> scannerStatuses = results.ToDictionary(result => result.ScannerType.ToString(), result => result.Status.ToString());
+            // Scanner type to status, in the order they ran: an object such as {"Package":"Failed"} in JSON. Set one by
+            // one, so two scanners of one type, which the database rejects anyway, show the last rather than throwing
+            // here and replacing the run's own error (Issue 10 review).
+            Dictionary<string, string> scannerStatuses = new Dictionary<string, string>();
+            foreach (ScannerResult result in results)
+            {
+                scannerStatuses[result.ScannerType.ToString()] = result.Status.ToString();
+            }
 
             if (completion.Status == ScanRunStatus.Completed)
             {

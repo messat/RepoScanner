@@ -412,6 +412,37 @@ namespace RepoScanner.Scanner.Tests
             Assert.That(_logger.Collector.GetSnapshot().Select(record => record.GetStructuredStateValue("Status")), Is.All.Null);
         }
 
+        // Issue 10 review: two scanners of one type is a misconfiguration the database already rejects (one result per
+        // type). The summary must still be logged, and must not replace the database's error with an error of its own.
+        [Test]
+        public async Task RunAsync_WithTwoScannersOfOneType_LogsTheSummaryAndKeepsTheDatabasesError()
+        {
+            await Assert.ThatAsync(() => RunAsync(new StubScanner(), new StubScanner()), Throws.InstanceOf<DbUpdateException>());
+
+            Assert.That(TheSummary().GetStructuredStateValue("ScanRunStatus"), Is.EqualTo("Failed"));
+        }
+
+        // Issue 10 review: DurationMs runs until the outcome is saved, as ScanRuns' times do, not on through deleting the
+        // clone, which can take seconds on Windows
+        [Test]
+        public async Task RunAsync_TheSummarysDurationStopsWhenTheOutcomeIsSaved()
+        {
+            // The scan "takes" 2 minutes of fake time, and closing the clone 10 more
+            StubScanner scanner = new StubScanner() { OnScan = () => _time.Advance(TimeSpan.FromMinutes(2)) };
+
+            await RunAsync(
+                _ => Task.FromResult(new RepositoryWorkspace(Folder, CommitId, () =>
+                {
+                    _time.Advance(TimeSpan.FromMinutes(10));
+                    return ValueTask.CompletedTask;
+                })),
+                timeLimit: null,
+                CancellationToken.None,
+                scanner);
+
+            Assert.That(TheSummary().GetStructuredStateValue("DurationMs"), Is.EqualTo("120000"));
+        }
+
         // #32: with every scanner failed there is nothing to reconcile. The run is Failed, recorded once with every
         // scanner's result and each one's reason, and the first failure is rethrown, so the process exits with 1.
         [Test]
