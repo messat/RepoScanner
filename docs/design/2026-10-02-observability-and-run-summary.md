@@ -48,7 +48,7 @@ Agreed in the design discussion on 2026-10-02.
 | 3 | Lines with no correlation ID or repository | Those logged before a message is read: start-up, `Scanner starting`, a malformed message, `Stopped taking messages`, and `Program`'s fatal lines | There is no request yet, or no longer one. In Azure, `ContainerGroupName` ties them to their execution |
 | 4 | The per-scanner line (#63) | One line per scanner, from `RepositoryScanRunner` after it runs: `{ScannerType} scanner {ScannerStatus} in {ScannerDurationMs} ms: {FindingCount} findings`. Information when it succeeded; Warning with the exception when it failed, replacing `The {ScannerType} scanner failed; the other scanners carry on`. The scanners' own detail lines stay | The same shape for all three scanners, so one search compares them. The time and count are already measured for `ScannerResults` |
 | 5 | The summary line (#64) | One per scan run, for every outcome: Completed, PartiallyCompleted and Failed, including a failed clone, the time limit, every scanner failing and the job being stopped. Logged last, once the outcome is saved or the save has failed. Information when Completed, Warning otherwise, with the error at the end. It replaces today's summary line and the `partially completed` warning | Today a failed scan has no summary, and the failures are what someone reads the log for |
-| 6 | What the summary holds | `ScanRunId`, `ScanRunStatus`, `Trigger`, `ProjectName`, `RepositoryName`, `CommitSha` (null when the clone failed, and for `--path`), `DurationMs` (from the scan run's start, so the clone counts), `FoundCount`, `NewCount`, `ReopenedCount`, `ResolvedCount`, `SuppressionExpiredCount`, `ScannerStatuses` (an object such as `{"Secret":"Succeeded","Package":"Failed"}`, empty when no scanner ran), and `ErrorMessage` when not Completed | Task #64's list (repository, commit, new, reopened, resolved, duration, scanner statuses) with what a reader needs to act: which run, why it failed, nightly or on demand |
+| 6 | What the summary holds | `ScanRunId`, `ScanRunStatus`, `Trigger`, `ProjectName`, `RepositoryName`, `CommitSha` (null when the clone failed, and for `--path`), `DurationMs` (from the scan run's start, so the clone counts), `FoundCount`, `NewCount`, `ReopenedCount`, `ResolvedCount`, `SuppressionExpiredCount`, `ScannerStatuses` (an object such as `{"Package":"Failed","CodePattern":"Succeeded"}`, empty when no scanner ran), and `ErrorMessage` when not Completed | Task #64's list (repository, commit, new, reopened, resolved, duration, scanner statuses) with what a reader needs to act: which run, why it failed, nightly or on demand |
 | 7 | Property names | One name means one thing everywhere. `{Status}` becomes `{ScanRunStatus}`; scanners use `{ScannerStatus}`. `DurationMs` is only a whole scan run's time: the clone line's becomes `{CloneDurationMs}`, the scanner line uses `{ScannerDurationMs}` | Otherwise `ScanRunStatus == "Failed"` or `DurationMs > 600000` would mix scan runs, scanners and clones. The rendered text does not change |
 | 8 | The JSON layout (#65) | Serilog's compact JSON ([CLEF](https://clef-json.org)), written by `RenderedCompactJsonFormatter` from `Serilog.Formatting.Compact` 3.0.0: `@t`, `@m` (the finished message), `@i`, `@l`, `@x`, then every property at the top level | Serilog 4.3.0 has `JsonFormatter` built in, but its own documentation says new code should prefer the compact formatters or `Serilog.Expressions`. The rendered form keeps the sentence, so a person reading Docker Desktop or Log Analytics sees it; top-level properties keep the searches short (`e.CorrelationId`). `Serilog.Expressions` gives full control over the shape, with a template to maintain. 3.0.0 needs Serilog 4.0 or later; the scanner has 4.3.0 |
 | 9 | When the console writes JSON | A new setting, `Scanner:Logging:Format`: `Text` or `Json`. When not set, `Text` in Development and `Json` in every other environment. Any other value exits 2, like every setting | Azure and the container run as Production (Issue 9 design, decision 4), so they get JSON with no setting. `dotnet run` uses Development (`launchSettings.json`), so it stays readable. A line `Scanner__Logging__Format=Text` in `.env` makes the container print text, as the README already suggests a `.env` line for the visibility timeout |
@@ -144,7 +144,7 @@ A scanner stopped by the time limit or the job logs no line: the run's summary s
 Logged once per scan run, after its outcome is saved. As text, on one line:
 
 ```
-Scan run 1 Completed (Nightly) for Kudos Wall/victim-repo at b65334233db66c3f774550c27d47bed3421102c8 in 2748 ms: 14 found, 14 new, 0 reopened, 0 resolved, 0 suppressions expired. Scanners: {"Secret":"Succeeded","Package":"Succeeded","CodePattern":"Succeeded"}
+Scan run 1 Completed (Nightly) for Kudos Wall/victim-repo at b65334233db66c3f774550c27d47bed3421102c8 in 2748 ms: 14 found, 14 new, 0 reopened, 0 resolved, 0 suppressions expired. Scanners: {"Secret":...,"Package":"Succeeded","CodePattern":"Succeeded"}
 ```
 
 When not Completed, the same line at Warning, ending `. Error: {ErrorMessage}`, for example `Error: git clone failed with exit code 128 ...`. The template is otherwise the same, so the same properties are on both.
@@ -158,13 +158,14 @@ As JSON, the same event on one line, shown here across several:
  "ScanRunId":1,"ScanRunStatus":"Completed","Trigger":"Nightly",
  "ProjectName":"Kudos Wall","RepositoryName":"victim-repo","CommitSha":"b65334233db66c3f774550c27d47bed3421102c8",
  "DurationMs":2748,"FoundCount":14,"NewCount":14,"ReopenedCount":0,"ResolvedCount":0,"SuppressionExpiredCount":0,
- "ScannerStatuses":{"Secret":"Succeeded","Package":"Succeeded","CodePattern":"Succeeded"},
+ "ScannerStatuses":{"Secret":...,"Package":"Succeeded","CodePattern":"Succeeded"},
  "SourceContext":"RepoScanner.Scanner.RepositoryScanRunner",
  "CorrelationId":"77438d01-1e66-47ae-a0ed-bd5c86c6f446"}
 ```
 
 - `@l` is missing because the line is Information: CLEF leaves it out for that level. A Warning has `"@l":"Warning"`.
 - `@m` puts quotes round string values, which is how Serilog renders a message unless the template says otherwise. The text console's `{Message:lj}` does not.
+- The secret scanner's status is shortened to `...` in this document's examples. RepoScanner's own SEC007 rule reads a quoted name containing "secret" followed by a value of 8 or more characters as a named secret, so the self-scan (`SelfScanTests`) would report `Succeeded` there. The real line has it in full, and the README's examples follow the same rule.
 - In the failure path, `RecordFailureAsync` logs the summary with the scanners' results so far, which means the list of results moves up to the start of `RunAsync`.
 
 ## JSON or text (#65)
