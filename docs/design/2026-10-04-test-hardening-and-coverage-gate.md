@@ -85,15 +85,15 @@ Also in #120:
 ```json
 {
   "schemaVersion": 1,
-  "correlationId": "5b0c7f0e-3a51-4c8e-9a43-0d9f2f6b8e21",
-  "repositoryId": "a3c1d2e4-5f60-4b7a-8c9d-0e1f2a3b4c5d",
+  "correlationId": "5b1c6f3e-8a2d-4e7f-9c1a-2d3e4f5a6b7c",
+  "repositoryId": "0f8fad5b-d9cb-469f-a165-70867728950e",
   "projectName": "Lumina",
   "repositoryName": "RepoScanner",
   "defaultBranch": "develop"
 }
 ```
 
-- The field names and rules are the Issue 7 design's Message format section, which gets a line pointing to this file.
+- The values are the Issue 7 design's example, which `ScanRequestReaderTests.ValidFields` already copies, so there is one example message. That design's Message format section gets a line pointing to this file.
 - `defaultBranch` is the branch's name, not `refs/heads/develop`, which the scanner rejects. The enqueuer strips the prefix Azure DevOps gives.
 - The test, `TryRead_TheExampleInDocs_IsAccepted`, reads the file from the repository root, as the fixture tests find their folders.
 
