@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -415,19 +416,54 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        // #63: one line per scanner in the same shape, so one search compares the three scanners' times and counts
         [Test]
-        public async Task RunAsync_WhenOneScannerFails_LogsAWarningNamingIt()
+        public async Task RunAsync_LogsOneLinePerScannerWithItsStatusTimeAndFindings()
+        {
+            await RunAsync(new StubScanner(Raw("SEC003", "a.json", 3, "hash-a"), Raw("SEC007", "a.json", 6, "hash-b")), new StubScanner() { ScannerType = ScannerType.Package });
+
+            FakeLogRecord[] lines = _logger.Collector.GetSnapshot().Where(record => record.GetStructuredStateValue("ScannerStatus") != null).ToArray();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(lines.Select(line => line.GetStructuredStateValue("ScannerType")), Is.EqualTo(new[] { "Secret", "Package" }));
+                Assert.That(lines.Select(line => line.GetStructuredStateValue("ScannerStatus")), Is.All.EqualTo("Succeeded"));
+                Assert.That(lines.Select(line => line.GetStructuredStateValue("FindingCount")), Is.EqualTo(new[] { "2", "0" }));
+                Assert.That(lines.Select(line => int.Parse(line.GetStructuredStateValue("ScannerDurationMs")!, CultureInfo.InvariantCulture)), Is.All.GreaterThanOrEqualTo(0));
+                Assert.That(lines.Select(line => line.Level), Is.All.EqualTo(LogLevel.Information));
+                Assert.That(lines[0].Message, Does.StartWith("Secret scanner Succeeded in ").And.EndWith(" ms: 2 findings"));
+            }
+        }
+
+        // A failed scanner's line is the warning, with the exception, so there is one line per scanner however it did
+        [Test]
+        public async Task RunAsync_WhenAScannerFails_ItsLineIsAWarningWithTheException()
         {
             await RunAsync(new StubScanner(), FailingPackageScanner("nuget.org data could not be downloaded"));
 
-            // The scanner's own warning; the run's "partially completed" warning follows it (#32)
-            FakeLogRecord warning = _logger.Collector.GetSnapshot()
-                .Single(record => record.Level == LogLevel.Warning && record.GetStructuredStateValue("ScannerType") != null);
+            IReadOnlyList<FakeLogRecord> records = _logger.Collector.GetSnapshot();
+            FakeLogRecord packages = records.Single(record => record.GetStructuredStateValue("ScannerType") == "Package");
             using (Assert.EnterMultipleScope())
             {
-                Assert.That(warning.GetStructuredStateValue("ScannerType"), Is.EqualTo("Package"));
-                Assert.That(warning.Exception, Is.InstanceOf<InvalidOperationException>());
+                Assert.That(packages.Level, Is.EqualTo(LogLevel.Warning));
+                Assert.That(packages.GetStructuredStateValue("ScannerStatus"), Is.EqualTo("Failed"));
+                Assert.That(packages.GetStructuredStateValue("FindingCount"), Is.EqualTo("0"));
+                Assert.That(packages.Exception, Is.InstanceOf<InvalidOperationException>());
+                Assert.That(records.Select(record => record.Message), Has.None.Contains("the other scanners carry on"));
             }
+        }
+
+        // A scanner stopped part-way did not finish, so it has no time or count to give; the run's own line says why
+        [Test]
+        public async Task RunAsync_WhenTheRunIsCancelled_LogsNoLineForTheStoppedScanner()
+        {
+            using (CancellationTokenSource stopping = new CancellationTokenSource())
+            {
+                StubScanner cancelled = new StubScanner(new OperationCanceledException(stopping.Token)) { OnScan = stopping.Cancel };
+
+                await Assert.ThatAsync(() => RunAsync(stopping.Token, cancelled), Throws.InstanceOf<OperationCanceledException>());
+            }
+
+            Assert.That(_logger.Collector.GetSnapshot().Where(record => record.GetStructuredStateValue("ScannerStatus") != null), Is.Empty);
         }
 
         // Stopping the scanner (Ctrl+C, or SIGTERM in Azure) is not a scanner failing: the run stops, and the

@@ -106,26 +106,29 @@ namespace RepoScanner.Scanner
                             {
                                 // One scanner failing, such as the package scanner with nuget.org down, does not stop the
                                 // others (#74). A stopped run is not a scanner failing, so that still ends the run below.
-                                _logger.LogWarning(exception, "The {ScannerType} scanner failed; the other scanners carry on", scanner.ScannerType);
-                                results.Add(new ScannerResult
+                                ScannerResult failed = new ScannerResult
                                 {
                                     ScannerType = scanner.ScannerType,
                                     Status = ScannerStatus.Failed,
                                     FindingCount = 0,
                                     DurationMs = (int)scannerDuration.ElapsedMilliseconds,
                                     ErrorMessage = exception.Message
-                                });
+                                };
+                                results.Add(failed);
+                                LogScannerResult(failed, exception);
                                 firstFailure ??= exception;
                                 continue;
                             }
 
-                            results.Add(new ScannerResult
+                            ScannerResult succeeded = new ScannerResult
                             {
                                 ScannerType = scanner.ScannerType,
                                 Status = ScannerStatus.Succeeded,
                                 FindingCount = scannerFindings.Count,
                                 DurationMs = (int)scannerDuration.ElapsedMilliseconds
-                            });
+                            };
+                            results.Add(succeeded);
+                            LogScannerResult(succeeded, failure: null);
                             completedScannerTypes.Add(scanner.ScannerType);
                             found.AddRange(scannerFindings);
                         }
@@ -198,6 +201,17 @@ namespace RepoScanner.Scanner
                     throw;
                 }
             }
+        }
+
+        // One line per scanner as it finishes, in the same shape for all three, so one search compares their times and
+        // counts (#63). A failed scanner's line is the warning, with its exception; the other scanners carry on.
+        private void LogScannerResult(ScannerResult result, Exception? failure)
+        {
+            _logger.Log(
+                failure == null ? LogLevel.Information : LogLevel.Warning,
+                failure,
+                "{ScannerType} scanner {ScannerStatus} in {ScannerDurationMs} ms: {FindingCount} findings",
+                result.ScannerType, result.Status, result.DurationMs, result.FindingCount);
         }
 
         // One part per failed scanner, in the order they ran, such as "Package scanner failed: nuget.org data could

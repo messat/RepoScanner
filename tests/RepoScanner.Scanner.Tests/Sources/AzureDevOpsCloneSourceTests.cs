@@ -348,6 +348,24 @@ namespace RepoScanner.Scanner.Tests.Sources
             }
         }
 
+        // Issue 10 design, decision 7: DurationMs only ever means a whole scan run, so a search on it never mixes in clones
+        [Test]
+        public async Task OpenAsync_LogsTheClonesTimeAsCloneDurationMs()
+        {
+            CreateVictimRepo();
+
+            await using (RepositoryWorkspace workspace = await Source(BareRepository.OrganizationUrl(_repos.FullPath))
+                .OpenAsync(Request("Kudos Wall", "victim-repo", "main"), CancellationToken.None))
+            {
+                FakeLogRecord cloned = _logger.Collector.GetSnapshot().Single(record => record.Message.StartsWith("Cloned ", StringComparison.Ordinal));
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(cloned.GetStructuredStateValue("CloneDurationMs"), Is.Not.Null);
+                    Assert.That(cloned.GetStructuredStateValue("DurationMs"), Is.Null);
+                }
+            }
+        }
+
         [Test]
         public void ParseCommitId_GivesTheTrimmedId()
         {
