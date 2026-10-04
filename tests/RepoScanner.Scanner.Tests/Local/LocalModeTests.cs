@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
@@ -331,6 +332,28 @@ namespace RepoScanner.Scanner.Tests.Local
             }
         }
 
+        // Issue 10 design, decision 11, and Review Focus 5: each nuget.org request's own lines are gone, which were most of a
+        // run's lines, but a retry, which says nuget.org is struggling, still shows
+        [Test]
+        public async Task Path_WhenNuGetOrgGoesDown_LogsTheRetriesButNotEachRequest()
+        {
+            string folder = CopyOfThePackagesFixtureWithSecrets();
+            _nuGet.Fail();
+
+            (int exitCode, string output) = await RunAsync("--path", folder);
+
+            JsonElement[] http = LogLines.Read(output).Where(line =>
+                (LogLines.Value(line, "SourceContext") ?? string.Empty).StartsWith("System.Net.Http.HttpClient", StringComparison.Ordinal)
+                || (LogLines.Value(line, "SourceContext") ?? string.Empty).StartsWith("Polly", StringComparison.Ordinal)).ToArray();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(0));
+                Assert.That(http.Where(line => LogLines.Level(line) == "Information"), Is.Empty);
+                Assert.That(http.Where(line => LogLines.Value(line, "SourceContext")!.StartsWith("Polly", StringComparison.Ordinal) && LogLines.Level(line) == "Warning"),
+                    Is.Not.Empty);
+            }
+        }
+
         // Issue 6 criterion 2, through the whole program (#54): exactly the planted patterns saved to SQL, and nothing
         // from the secret or package scanners. A second run adds nothing, because each finding keeps its
         // fingerprint (ADR-024), including the two empty catches of one file.
@@ -442,7 +465,7 @@ namespace RepoScanner.Scanner.Tests.Local
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(exitCode, Is.EqualTo(2));
-                Assert.That(output.Split('\n').Count(line => line.Contains("FTL]", StringComparison.Ordinal)), Is.EqualTo(1));
+                Assert.That(LogLines.Read(output).Count(line => LogLines.Level(line) == "Fatal"), Is.EqualTo(1));
                 Assert.That(output, Does.Contain("--path"));
                 Assert.That(output, Does.Not.Contain("   at "), "A settings problem should not print a stack trace");
             }

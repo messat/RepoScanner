@@ -14,6 +14,8 @@
     <PackageReference Include="Serilog.Extensions.Hosting" />
     <!-- Serilog output to the console (stdout), which Container Apps collects -->
     <PackageReference Include="Serilog.Sinks.Console" />
+    <!-- One JSON object per log line outside Development, for Log Analytics (ADR-028) -->
+    <PackageReference Include="Serilog.Formatting.Compact" />
     <!-- NuGet's own version and range rules, for matching packages against advisories (#44, #45) -->
     <PackageReference Include="NuGet.Versioning" />
     <!-- IHttpClientFactory and the standard retry and timeout handler for nuget.org (#44) -->

@@ -1,8 +1,10 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -137,12 +139,14 @@ namespace RepoScanner.Scanner.Tests
 
             (int exitCode, string output) = await RunAsync(queueName);
 
+            JsonElement poisoned = LogLines.Read(output).Single(line => LogLines.Value(line, "PoisonQueueName") != null);
             using (ScannerDbContext context = _database.CreateContext())
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(exitCode, Is.EqualTo(0));
                 Assert.That(_queue.Poisoned, Is.EqualTo(new[] { malformed }));
-                Assert.That(output, Does.Contain("moved to " + poisonQueueName + ": The message is not JSON"));
+                Assert.That(LogLines.Value(poisoned, "PoisonQueueName"), Is.EqualTo(poisonQueueName));
+                Assert.That(LogLines.Value(poisoned, "Reason"), Does.StartWith("The message is not JSON"));
                 Assert.That(context.ScanRuns.Count(), Is.Zero);
             }
         }
@@ -156,12 +160,14 @@ namespace RepoScanner.Scanner.Tests
 
             (int exitCode, string output) = await RunAsync("scan-nightly");
 
+            JsonElement skipped = LogLines.Read(output).Single(line => LogLines.Message(line).StartsWith("Skipped", StringComparison.Ordinal));
             using (ScannerDbContext context = _database.CreateContext())
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(exitCode, Is.EqualTo(0));
                 Assert.That(_queue.Deleted, Is.EqualTo(new[] { message }));
-                Assert.That(output, Does.Contain("Skipped Lumina/secrets-repo").And.Contain("scan run " + running + " is already scanning it"));
+                Assert.That(LogLines.Value(skipped, "RepositoryName"), Is.EqualTo("secrets-repo"));
+                Assert.That(LogLines.Value(skipped, "ScanRunId"), Is.EqualTo(running.ToString(CultureInfo.InvariantCulture)));
                 Assert.That(context.ScanRuns.Count(), Is.EqualTo(1), "no new scan run");
                 Assert.That(context.Findings.Count(), Is.Zero);
             }
@@ -177,6 +183,7 @@ namespace RepoScanner.Scanner.Tests
 
             (int exitCode, string output) = await RunAsync("scan-nightly");
 
+            JsonElement takenOver = LogLines.Read(output).Single(line => LogLines.Message(line).Contains("was abandoned", StringComparison.Ordinal));
             using (ScannerDbContext context = _database.CreateContext())
             {
                 ScanRun old = context.ScanRuns.Single(run => run.Id == abandoned);
@@ -187,7 +194,8 @@ namespace RepoScanner.Scanner.Tests
                     Assert.That(exitCode, Is.EqualTo(0));
                     Assert.That(old.Status, Is.EqualTo(ScanRunStatus.Failed));
                     Assert.That(old.ErrorMessage, Does.StartWith("Abandoned: still Running more than 20 minutes"));
-                    Assert.That(output, Does.Contain("Scan run " + abandoned + " for Lumina/secrets-repo was abandoned"));
+                    Assert.That(LogLines.Value(takenOver, "ScanRunId"), Is.EqualTo(abandoned.ToString(CultureInfo.InvariantCulture)));
+                    Assert.That(LogLines.Value(takenOver, "RepositoryName"), Is.EqualTo("secrets-repo"));
                     Assert.That(scanned.Status, Is.EqualTo(ScanRunStatus.Completed));
                     Assert.That(context.Findings.Count(), Is.EqualTo(FixtureSecrets.All.Count));
                     Assert.That(_queue.Deleted, Is.EqualTo(new[] { message }));
@@ -232,7 +240,10 @@ namespace RepoScanner.Scanner.Tests
             _queue.Add(Body("ghost", GhostId));
 
             (int exitCode, string output) = await RunAsync("scan-nightly");
-            bool leaked = output.Contains(Pat, StringComparison.Ordinal) || output.Contains(Base64, StringComparison.Ordinal);
+
+            // Searched as printed and, line by line, unescaped, so JSON's escaping cannot hide a leaked PAT (Review Focus 2)
+            bool leaked = output.Contains(Pat, StringComparison.Ordinal) || output.Contains(Base64, StringComparison.Ordinal)
+                || LogLines.Read(output).SelectMany(LogLines.Strings).Any(text => text.Contains(Pat, StringComparison.Ordinal) || text.Contains(Base64, StringComparison.Ordinal));
 
             using (Assert.EnterMultipleScope())
             {

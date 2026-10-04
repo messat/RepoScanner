@@ -2,7 +2,7 @@
 
 Each file records one decision: the context that forced it, what was decided, and what follows from it.
 
-ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADRs v2*, which is canonical for those numbers. ADR-020 onwards were decided while building this repository. The next new ADR is **ADR-028**.
+ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADRs v2*, which is canonical for those numbers. ADR-020 onwards were decided while building this repository. The next new ADR is **ADR-029**.
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -33,6 +33,7 @@ ADR-001 to ADR-019 come from *Code Repo Analysis Dashboard, Spike Findings & ADR
 | [ADR-025](ADR-025-auto-resolve-only-for-scanners-that-completed.md) | Only a scanner that completed can resolve its findings | Accepted, amended 2026-09-28 |
 | [ADR-026](ADR-026-package-vulnerabilities-from-nuget-org-without-a-restore.md) | Package vulnerabilities come from nuget.org's vulnerability files, without a restore | Accepted |
 | [ADR-027](ADR-027-skip-a-repository-being-scanned-take-over-an-abandoned-run.md) | Skip a repository that is being scanned; take over a run abandoned for longer than the per-repository timeout plus five minutes | Accepted |
+| [ADR-028](ADR-028-json-log-lines-on-stdout-outside-development.md) | JSON log lines on stdout outside Development | Accepted |
 
 ## Writing a new ADR
 

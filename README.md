@@ -79,6 +79,7 @@ The app checks its settings when it starts and refuses to run if any are missing
 | `Scanner:AzureDevOps:Pat` | Yes, in queue mode | | A personal access token with Code (Read) only, shared with the enqueuer. Locally, the `Scanner__AzureDevOps__Pat` user environment variable; in Azure, a Key Vault secret reference. Never in an appsettings file (ADR-007) |
 | `Scanner:AzureDevOps:CloneTimeoutMinutes` | | `8` | A clone still going after this long is stopped and its scan run marked `Failed` (ADR-016). `ScanTimeoutPerRepoMinutes` still covers the clone and the scan together |
 | `Scanner:Database:ConnectionString` | Yes | | The findings database. Locally, the `Scanner__Database__ConnectionString` user environment variable (see [Database and migrations](#database-and-migrations)); never in an appsettings file (ADR-007) |
+| `Scanner:Logging:Format` | | `Text` in `Development`, `Json` elsewhere | `Text` or `Json`, in any case: one JSON object per line for Log Analytics, or readable text ([ADR-028](docs/adr/ADR-028-json-log-lines-on-stdout-outside-development.md)) |
 
 With `--path`, only the database setting is needed: the queue, execution and Azure DevOps settings are for queue mode.
 

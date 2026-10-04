@@ -19,6 +19,7 @@
   <ItemGroup>
     <PackageVersion Include="Serilog.Extensions.Hosting" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageVersion Include="Serilog.Formatting.Compact" Version="3.0.0" />
   </ItemGroup>
 
   <!-- Database access: EF Core with the SQL Server provider, and its design-time support for dotnet ef.

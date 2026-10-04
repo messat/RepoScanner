@@ -51,7 +51,7 @@ Agreed in the design discussion on 2026-10-02.
 | 6 | What the summary holds | `ScanRunId`, `ScanRunStatus`, `Trigger`, `ProjectName`, `RepositoryName`, `CommitSha` (null when the clone failed, and for `--path`), `DurationMs` (from the scan run's start, so the clone counts), `FoundCount`, `NewCount`, `ReopenedCount`, `ResolvedCount`, `SuppressionExpiredCount`, `ScannerStatuses` (an object such as `{"Package":"Failed","CodePattern":"Succeeded"}`, empty when no scanner ran), and `ErrorMessage` when not Completed | Task #64's list (repository, commit, new, reopened, resolved, duration, scanner statuses) with what a reader needs to act: which run, why it failed, nightly or on demand |
 | 7 | Property names | One name means one thing everywhere. `{Status}` becomes `{ScanRunStatus}`; scanners use `{ScannerStatus}`. `DurationMs` is only a whole scan run's time: the clone line's becomes `{CloneDurationMs}`, the scanner line uses `{ScannerDurationMs}` | Otherwise `ScanRunStatus == "Failed"` or `DurationMs > 600000` would mix scan runs, scanners and clones. The rendered text does not change |
 | 8 | The JSON layout (#65) | Serilog's compact JSON ([CLEF](https://clef-json.org)), written by `RenderedCompactJsonFormatter` from `Serilog.Formatting.Compact` 3.0.0: `@t`, `@m` (the finished message), `@i`, `@l`, `@x`, then every property at the top level | Serilog 4.3.0 has `JsonFormatter` built in, but its own documentation says new code should prefer the compact formatters or `Serilog.Expressions`. The rendered form keeps the sentence, so a person reading Docker Desktop or Log Analytics sees it; top-level properties keep the searches short (`e.CorrelationId`). `Serilog.Expressions` gives full control over the shape, with a template to maintain. 3.0.0 needs Serilog 4.0 or later; the scanner has 4.3.0 |
-| 9 | When the console writes JSON | A new setting, `Scanner:Logging:Format`: `Text` or `Json`. When not set, `Text` in Development and `Json` in every other environment. Any other value exits 2, like every setting | Azure and the container run as Production (Issue 9 design, decision 4), so they get JSON with no setting. `dotnet run` uses Development (`launchSettings.json`), so it stays readable. A line `Scanner__Logging__Format=Text` in `.env` makes the container print text, as the README already suggests a `.env` line for the visibility timeout |
+| 9 | When the console writes JSON | A new setting, `Scanner:Logging:Format`: `Text` or `Json`, in any case (amended in #65: .NET settings usually ignore case). When not set, `Text` in Development and `Json` in every other environment. Any other value exits 2, like every setting | Azure and the container run as Production (Issue 9 design, decision 4), so they get JSON with no setting. `dotnet run` uses Development (`launchSettings.json`), so it stays readable. A line `Scanner__Logging__Format=Text` in `.env` makes the container print text, as the README already suggests a `.env` line for the visibility timeout |
 | 10 | The two loggers | The start-up logger (`Log.Logger`, [Program.cs:48](../../src/RepoScanner.Scanner/Program.cs)) and the host's logger follow the same rule, through one class. The start-up logger exists before configuration is read, so it takes `Scanner:Logging:Format` and the environment (`DOTNET_ENVIRONMENT`, or `--environment`) from environment variables and the command line only | `Azure DevOps refused the token, scanner stopped`, which the PAT alert searches for, is written by the start-up logger. If only the host's logger changed, that line would stay text |
 | 11 | Noise | `MinimumLevel.Override` to Warning for `System.Net.Http.HttpClient` and `Polly`, as `Microsoft` already is | 230 of 283 lines in the demo. A retry still shows: Polly logs it as a warning (checked in #65) |
 | 12 | Alerts | This Issue writes the two searches into the README and pins the lines they rely on with tests. Issue 12's pipeline creates the alert rules (recorded on #61 and #72) | Nothing is applied to Azure by hand (ADR-006), so everything in this Issue can be finished locally |
@@ -177,16 +177,19 @@ namespace RepoScanner.Scanner.Logging
     // host's logger ask this class, so the two never differ.
     public static class ConsoleLogFormat
     {
-        public const string Text = "Text";
-        public const string Json = "Json";
-
-        // setting is Scanner:Logging:Format, or null when not set. A value that is neither is left to
-        // LoggingOptions to reject (exit 2), and the environment's default is used until then.
+        // setting is Scanner:Logging:Format, or null when not set. Text or Json in any case wins, as .NET settings
+        // usually ignore case. A value that is neither is left to LoggingOptions to reject (exit 2), and the
+        // environment's default is used until then.
         public static bool IsJson(string? setting, string environmentName)
         {
-            if (setting == Json || setting == Text)
+            if (string.Equals(setting, "Json", StringComparison.OrdinalIgnoreCase))
             {
-                return setting == Json;
+                return true;
+            }
+
+            if (string.Equals(setting, "Text", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
             }
 
             return !string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase);
@@ -197,7 +200,7 @@ namespace RepoScanner.Scanner.Logging
 
 - **The host's logger** (`CreateBuilder`): `builder.Configuration["Scanner:Logging:Format"]` and `builder.Environment.EnvironmentName`. With JSON, `.WriteTo.Console(new RenderedCompactJsonFormatter())`; with text, today's `outputTemplate`.
 - **The start-up logger** (`RunAsync`): a small configuration from environment variables and the command line, read before the host is built: `Scanner:Logging:Format`, then the environment from `--environment`, else `DOTNET_ENVIRONMENT`, else Production.
-- **`LoggingOptions`**: `Format`, empty or `[AllowedValues("Text", "Json")]`, bound and validated on start like the other groups, so `Scanner__Logging__Format=Xml` exits 2 with one line.
+- **`LoggingOptions`**: `Format`, empty or `Text` or `Json` in any case (`[RegularExpression("^(?i:text|json)$")]`), bound and validated on start like the other groups, so `Scanner__Logging__Format=Xml` exits 2 with one line.
 - **The noise overrides**: `.MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)` and `.MinimumLevel.Override("Polly", LogEventLevel.Warning)`, next to `Microsoft`.
 - Container Apps keeps one row per line, so an exception's stack trace, which today spreads over many rows, stays in one row in `@x`.
 
