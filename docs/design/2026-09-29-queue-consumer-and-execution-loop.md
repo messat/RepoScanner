@@ -39,12 +39,12 @@ Agreed in the design discussion on 2026-09-29.
 | 8 | When the folder is opened | After the ScanRun is started, inside the runner, and always closed afterwards | A missing folder, and from Issue 8 a failed clone, is recorded as a Failed ScanRun (ADR-013). Issue 8 deletes its clone on close, even on failure |
 | 9 | Time limits | Run budget 50 minutes, 15 minutes per repository, messages hidden for 65 minutes; 1 minute in `Development` | See Settings |
 | 10 | How many messages are taken at once | One | A batch would hide every message in it for 65 minutes while one run works through them, so a second run (`maxExecutions` above 1, ADR-012) could not help |
-| 11 | When a message is deleted | After its ScanRun is saved as Completed or PartiallyCompleted (ADR-013) | A crash between saving and deleting scans the repository twice, which is harmless: findings are matched on fingerprint (ADR-004) |
+| 11 | When a message is deleted | After its ScanRun is saved as Completed or PartiallyCompleted (ADR-013) | A crash between saving and deleting leaves the message, which reappears. Since Issue 13 it is then deleted as already done, without a second scan. Before Issue 13 it scanned the repository twice, which was harmless: findings are matched on fingerprint (ADR-004) |
 | 12 | A failed scan | The message is left. It reappears after the visibility timeout and is tried again | Retrying helps with things that change, such as a database blip |
 | 13 | When a message is poisoned | On its 4th pick-up (`DequeueCount` above `MaxDequeueCount`, 3), and on the first read of a malformed one | ADR-013. Retrying a malformed message cannot help |
 | 14 | How it is poisoned | The body is copied unchanged to the lane's poison queue, kept for 30 days, then the original is deleted. One "message poisoned" log line | Copying first means it can never be lost. An unchanged body can be moved back with Storage Explorer's **Move**. Azure's default expiry is 7 days, too short to be noticed |
 | 15 | A malformed message's ScanRun | None | Its repository details cannot be trusted. It is the one exception to ADR-013's "a failed scan is always visible in ScanRun", recorded in the ADR-013 amendment |
-| 16 | A repository with a Running ScanRun | Started `ScanTimeoutPerRepoMinutes` + 5 minutes ago or less: the message is deleted and logged as skipped. Longer ago: that run is marked Failed as abandoned, and the repository is scanned | A live scan is stopped at 15 minutes, so a Running row older than 20 minutes must belong to a run that died. New ADR-027 (#33) |
+| 16 | A repository with a Running ScanRun | Checked after the already-done check (Issue 13, decision 25). Started `ScanTimeoutPerRepoMinutes` + 5 minutes ago or less: the message is deleted and logged as skipped. Longer ago: that run is marked Failed as abandoned, and the repository is scanned | A live scan is stopped at 15 minutes, so a Running row older than 20 minutes must belong to a run that died. New ADR-027 (#33) |
 | 17 | Exit codes in queue mode | 0 when the queue was worked through or the budget ran out, even if some repositories failed. 1 when the queue or the database cannot be reached, or the run is stopped. 2 when a queue is missing or a setting is wrong | A failed repository is recorded in its ScanRun and retried; it is not a failed execution |
 | 18 | A missing queue | Found on first use and reported as a settings error, exit 2. The app never creates queues | In Azure the scanner may only use named queues (ADR-014), and may only add messages to the poison queue, so it cannot check that one at start-up. Locally, `enqueue-local.ps1` creates them |
 | 19 | Signing in to Azure | Built now: `Scanner:Queue:ServiceUri` with `DefaultAzureCredential` (Azure.Identity) | Moving to Azure is then a settings change, not a code change (ADR-007, ADR-017) |
@@ -53,6 +53,7 @@ Agreed in the design discussion on 2026-09-29.
 | 22 | New packages | `Azure.Storage.Queues` **12.27.1** and `Azure.Identity` **1.21.0** in `RepoScanner.Scanner`; `Microsoft.Extensions.TimeProvider.Testing` **10.10.0** in the Scanner tests. The latest stable versions on 2026-09-29 | Core stays free of packages |
 | 23 | New ADRs | ADR-027, skip and take-over (#33). ADR-013 is amended (#30) | See those tasks |
 | 24 | Where this document lives | `docs/design/` | Same as Issues 2 to 6 |
+| 25 | A request already done (Issue 13, #76, added 2026-10-09) | Checked first for a message that was read. When its repository has a Completed or PartiallyCompleted ScanRun from the **same lane** whose `StartedUtc` is strictly after the message's `InsertedOn`, the message is deleted and logged as already done, with no scan and no new ScanRun. Failed and Running runs never count; a message with no `InsertedOn` is scanned. Agreed 2026-10-04: only the same lane counts | Storage queues deliver at least once (ADR-004), so duplicates arrive: the enqueuer re-sending after a crash, a retried send, or decision 11's crash. A scan that started after the request was queued has already done it. Checked before the poison check, so a request already done never raises a false poison alert. Same lane only, so a "Scan now" click always gets its own on-demand ScanRun. Azure gives `InsertedOn` to the whole second, so the run must start after the end of that second: erring that way costs one scan too many, never a dropped request. There is no other margin: clock differences between the storage server and the container cost at most one scan too many, or a request covered by a scan that started seconds earlier |
 
 ## Project layout
 
@@ -231,17 +232,17 @@ namespace RepoScanner.Scanner.Sources
 1. Log `Scanner starting in {EnvironmentName} for queue {QueueName}`, as today, and start the budget clock.
 2. If less than `ScanTimeoutPerRepoMinutes` is left of `MaxRunDurationMinutes`, stop: a repository that started now might not finish before Azure stops the job.
 3. Take one message, hidden for `VisibilityTimeoutMinutes`. None: stop.
-4. Read it (#29). Malformed: poison it, then go back to 2.
+4. Read it (#29). Malformed: poison it, then go back to 2. Already done (Issue 13, decision 25): delete it, then go back to 2.
 5. Picked up more than `MaxDequeueCount` times: poison it (see Poison), then go back to 2.
 6. Check for a Running ScanRun (#33). Skipped: go back to 2.
 7. Scan it with `RepositoryScanRunner`, the folder from `IRepositorySource` and the per-repository time limit.
 8. Saved: delete the message. Failed: log a warning with the repository, message ID and attempt, and leave the message.
 9. Go back to 2.
 
-When it stops, it logs one line saying why (`queue empty`, `time budget spent` or `asked to stop`) with how many messages were scanned, failed and poisoned; #33 adds how many were skipped. The fuller run summary is Issue 10.
+When it stops, it logs one line saying why (`queue empty`, `time budget spent` or `asked to stop`) with how many messages were scanned, failed and poisoned; #33 adds how many were skipped, and Issue 13 how many were already done. The fuller run summary is Issue 10.
 
 - Messages are worked on one after another; only one repository is scanned at a time in a run. With `maxExecutions` 1 (ADR-012) there is one run at a time.
-- A database error in steps 5 or 6 stops the run with exit 1, leaving the message: every other message would fail the same way.
+- A database error in the already-done check of step 4, or in steps 5 or 6, stops the run with exit 1, leaving the message: every other message would fail the same way.
 - When the job is asked to stop (Ctrl+C locally, SIGTERM in Azure), the current scan is cancelled and marked Failed, as `--path` does today. Its message is left, and the process exits 1.
 
 **Worked example.** Five repositories at about 6 minutes each: A, B and D finish and are deleted; C hits 15 minutes at 02:29 and is left; at 02:36 only 14 minutes are left, so E is not started and the run exits 0. Azure starts another run for E. C reappears at 03:19 and fails twice more; on its 4th pick-up it is poisoned.
@@ -348,6 +349,7 @@ One task at a time, stopping after each for review, then a commit whose message 
 
 - In Azure, a scan that crashes is retried only when its message reappears, about 65 minutes later. For "Scan now" the dashboard shows the Running row turning Failed on the next pick-up, and the user can click again.
 - A skipped request is not kept. If the scan it gave way to then fails, the repository waits for the next night or another "Scan now".
+- A "Scan now" request that arrives while its repository is being scanned is skipped, even if the developer pushed after that scan cloned, so the push waits for the next scan. Raised as Issue 14 (added 2026-10-09).
 - Two runs that check the same repository in the same instant can both scan it. The findings are not duplicated, but there are two ScanRuns.
 - A malformed message appears only in the log and the poison queue, not in the dashboard.
 - A repository renamed since the message was sent is looked for under its old name. In Issue 7 that folder is not found; from Issue 8 the clone fails. The next nightly message carries the new name.

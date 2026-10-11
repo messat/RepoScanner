@@ -86,5 +86,19 @@ namespace RepoScanner.Data.Repositories
                 .OrderBy(run => run.StartedUtc)
                 .ToListAsync(cancellationToken);
         }
+
+        // Also narrowed by the (RepositoryId, Status) index. Failed and Running runs never count: a failed or crashed scan
+        // has not done what was asked, so the repository is scanned again (Issue 13).
+        public async Task<ScanRun?> GetSuccessfulRunStartedAfterAsync(
+            Guid azureDevOpsId, ScanTrigger trigger, DateTime startedAfterUtc, CancellationToken cancellationToken)
+        {
+            return await _context.ScanRuns
+                .Where(run => run.Repository.AzureDevOpsId == azureDevOpsId
+                    && run.TriggerType == trigger
+                    && (run.Status == ScanRunStatus.Completed || run.Status == ScanRunStatus.PartiallyCompleted)
+                    && run.StartedUtc > startedAfterUtc)
+                .OrderByDescending(run => run.StartedUtc)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
     }
 }

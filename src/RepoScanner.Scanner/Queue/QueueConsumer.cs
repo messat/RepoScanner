@@ -49,7 +49,7 @@ namespace RepoScanner.Scanner.Queue
                 return null;
             }
 
-            return new ScanQueueMessage(message.MessageId, message.PopReceipt, message.Body.ToString(), message.DequeueCount);
+            return new ScanQueueMessage(message.MessageId, message.PopReceipt, message.Body.ToString(), message.DequeueCount, message.InsertedOn);
         }
 
         public async Task DeleteAsync(ScanQueueMessage message, CancellationToken cancellationToken)

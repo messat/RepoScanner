@@ -47,6 +47,18 @@ namespace RepoScanner.Scanner.Tests.Queue
             }
         }
 
+        // Issue 13: the loop compares when the message was queued with when a scan run started
+        [Test]
+        public async Task ReceiveAsync_CarriesTheTimeTheMessageWasQueued()
+        {
+            DateTimeOffset queued = new DateTimeOffset(2026, 10, 1, 1, 0, 0, TimeSpan.Zero);
+            _queue.Add("message-1", "receipt-1", Body, dequeueCount: 1, insertedOn: queued);
+
+            ScanQueueMessage? message = await CreateConsumer().ReceiveAsync(TimeSpan.FromMinutes(65), CancellationToken.None);
+
+            Assert.That(message?.InsertedOn, Is.EqualTo(queued));
+        }
+
         [Test]
         public async Task ReceiveAsync_WhenTheQueueIsEmpty_ReturnsNull()
         {

@@ -40,9 +40,9 @@ namespace RepoScanner.Scanner.Tests.Queue
 
         public RequestFailedException? SendFailure { get; set; }
 
-        public void Add(string messageId, string popReceipt, string body, long dequeueCount)
+        public void Add(string messageId, string popReceipt, string body, long dequeueCount, DateTimeOffset? insertedOn = null)
         {
-            Messages.Enqueue(QueuesModelFactory.QueueMessage(messageId, popReceipt, new BinaryData(body), dequeueCount));
+            Messages.Enqueue(QueuesModelFactory.QueueMessage(messageId, popReceipt, new BinaryData(body), dequeueCount, insertedOn: insertedOn));
         }
 
         public override Task<Response<QueueMessage>> ReceiveMessageAsync(TimeSpan? visibilityTimeout = null, CancellationToken cancellationToken = default)

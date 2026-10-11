@@ -21,11 +21,12 @@ namespace RepoScanner.Scanner.Tests.Queue
         // Not taken yet
         public int WaitingCount => _waiting.Count;
 
-        // dequeueCount is what Azure gives the message when it is taken: 1 the first time
-        public ScanQueueMessage Add(string body, long dequeueCount = 1)
+        // dequeueCount is what Azure gives the message when it is taken: 1 the first time. insertedOn is when
+        // Azure queued it; left null, the loop's "already done" check (Issue 13) never applies.
+        public ScanQueueMessage Add(string body, long dequeueCount = 1, DateTimeOffset? insertedOn = null)
         {
             int number = _waiting.Count + Deleted.Count + Poisoned.Count + 1;
-            ScanQueueMessage message = new ScanQueueMessage("message-" + number, "receipt-" + number, body, dequeueCount);
+            ScanQueueMessage message = new ScanQueueMessage("message-" + number, "receipt-" + number, body, dequeueCount, insertedOn);
             _waiting.Enqueue(message);
             return message;
         }

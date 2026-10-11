@@ -286,11 +286,69 @@ namespace RepoScanner.Data.Tests.Repositories
             }
         }
 
-        private static ScanRun RunStarted(DateTime startedUtc, ScanRunStatus status)
+        // Issue 13: the latest good run of that lane that started after the message was queued. Failed and Running runs,
+        // the other lane's and another repository's never count, so the T+20 run is the answer.
+        [Test]
+        public async Task GetSuccessfulRunStartedAfterAsync_ReturnsTheLatestGoodRunFromThatLane()
+        {
+            Repository scanned = new Repository { AzureDevOpsId = AzureDevOpsId, ProjectName = "Lumina", Name = "RepoScanner", DefaultBranch = "main" };
+            scanned.ScanRuns.Add(RunStarted(StartedUtc.AddMinutes(10), ScanRunStatus.Completed));
+            ScanRun partiallyCompleted = RunStarted(StartedUtc.AddMinutes(20), ScanRunStatus.PartiallyCompleted);
+            scanned.ScanRuns.Add(partiallyCompleted);
+            scanned.ScanRuns.Add(RunStarted(StartedUtc.AddMinutes(30), ScanRunStatus.Failed));
+            scanned.ScanRuns.Add(RunStarted(StartedUtc.AddMinutes(40), ScanRunStatus.Running));
+            scanned.ScanRuns.Add(RunStarted(StartedUtc.AddMinutes(50), ScanRunStatus.Completed, ScanTrigger.OnDemand));
+            SeedRepository(scanned);
+
+            Repository other = TestEntities.NewRepository();
+            other.ScanRuns.Add(RunStarted(StartedUtc.AddMinutes(60), ScanRunStatus.Completed));
+            SeedRepository(other);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun? found = await new ScanRunRepository(context)
+                    .GetSuccessfulRunStartedAfterAsync(AzureDevOpsId, ScanTrigger.Nightly, StartedUtc, CancellationToken.None);
+
+                Assert.That(found?.Id, Is.EqualTo(partiallyCompleted.Id));
+            }
+        }
+
+        // Strictly after: a run that started at the moment the message was queued, or before, may have missed what it asks
+        [Test]
+        public async Task GetSuccessfulRunStartedAfterAsync_IgnoresARunThatStartedAtOrBeforeTheTime()
+        {
+            Repository scanned = new Repository { AzureDevOpsId = AzureDevOpsId, ProjectName = "Lumina", Name = "RepoScanner", DefaultBranch = "main" };
+            scanned.ScanRuns.Add(RunStarted(StartedUtc, ScanRunStatus.Completed));
+            scanned.ScanRuns.Add(RunStarted(StartedUtc.AddMinutes(-1), ScanRunStatus.Completed));
+            SeedRepository(scanned);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun? found = await new ScanRunRepository(context)
+                    .GetSuccessfulRunStartedAfterAsync(AzureDevOpsId, ScanTrigger.Nightly, StartedUtc, CancellationToken.None);
+
+                Assert.That(found, Is.Null);
+            }
+        }
+
+        [Test]
+        public async Task GetSuccessfulRunStartedAfterAsync_ForARepositoryNotStoredYet_ReturnsNone()
+        {
+            using (ScannerDbContext context = _database.CreateContext())
+            {
+                ScanRun? found = await new ScanRunRepository(context)
+                    .GetSuccessfulRunStartedAfterAsync(AzureDevOpsId, ScanTrigger.Nightly, StartedUtc, CancellationToken.None);
+
+                Assert.That(found, Is.Null);
+            }
+        }
+
+        private static ScanRun RunStarted(DateTime startedUtc, ScanRunStatus status, ScanTrigger trigger = ScanTrigger.Nightly)
         {
             ScanRun scanRun = TestEntities.NewScanRun();
             scanRun.StartedUtc = startedUtc;
             scanRun.Status = status;
+            scanRun.TriggerType = trigger;
             return scanRun;
         }
 
