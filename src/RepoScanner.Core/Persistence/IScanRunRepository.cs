@@ -26,5 +26,10 @@ namespace RepoScanner.Core.Persistence
         // The repository's Running scan runs, oldest first, matched on AzureDevOpsId: empty when it is not being
         // scanned, or not stored yet. The queue loop skips or takes over on these (#33, ADR-027).
         Task<IReadOnlyList<ScanRun>> GetRunningAsync(Guid azureDevOpsId, CancellationToken cancellationToken);
+
+        // The repository's latest Completed or PartiallyCompleted scan run from this lane that started strictly after
+        // startedAfterUtc, matched on AzureDevOpsId; null when there is none. A request queued before such a run started
+        // is already done, so the queue loop deletes it without scanning (Issue 13).
+        Task<ScanRun?> GetSuccessfulRunStartedAfterAsync(Guid azureDevOpsId, ScanTrigger trigger, DateTime startedAfterUtc, CancellationToken cancellationToken);
     }
 }

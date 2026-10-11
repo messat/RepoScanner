@@ -21,8 +21,10 @@ namespace RepoScanner.Scanner
     // Runs one execution of the scanner job (#31, Issue 7 design, The loop): takes messages from the lane's queue
     // one at a time and scans each repository, until the queue is empty or the time budget would not fit another
     // repository. A failed scan leaves its message, to be tried again; a malformed message, or one already tried
-    // MaxDequeueCount times, goes to the poison queue. A repository another run is scanning is skipped, and a run
-    // abandoned by one that died is taken over (#33, ADR-027). A PAT Azure DevOps refuses stops the run (#37).
+    // MaxDequeueCount times, goes to the poison queue. A request a scan run of the same lane has already done, by
+    // starting after it was queued, is deleted without a scan (Issue 13). A repository another run is scanning is
+    // skipped, and a run abandoned by one that died is taken over (#33, ADR-027). A PAT Azure DevOps refuses stops the
+    // run (#37).
     public sealed class ScanOrchestrator
     {
         // A Running scan run this much older than ScanTimeoutPerRepoMinutes has been abandoned (ADR-027)
@@ -141,14 +143,36 @@ namespace RepoScanner.Scanner
             }
         }
 
-        // A message that was read: skipped, poisoned after too many attempts, or scanned, then deleted once its scan run
-        // is saved
+        // A message that was read: already done, skipped, poisoned after too many attempts, or scanned, then deleted once
+        // its scan run is saved
         private async Task HandleRequestAsync(ScanQueueMessage message, ScanRequest request, RunCounts counts, CancellationToken cancellationToken)
         {
             // A scope per message, so each repository gets a fresh DbContext
             using (IServiceScope scope = _scopes.CreateScope())
             {
                 IScanRunRepository scanRuns = scope.ServiceProvider.GetRequiredService<IScanRunRepository>();
+
+                // Sent twice, or left by a crash between saving the scan and deleting its message: a scan of this lane that
+                // started after the message was queued has done what it asks (Issue 13). Checked first, so a request already
+                // done is never poisoned and raises no false alert. Not caught, as below: a database error stops the run.
+                if (message.InsertedOn.HasValue)
+                {
+                    // Azure gives InsertedOn to the whole second, so the message may have been queued up to a second later.
+                    // Only a scan that started after that second is sure to have started after the request: erring this way
+                    // costs one scan too many, never a request dropped.
+                    DateTime queuedBy = message.InsertedOn.Value.UtcDateTime.AddSeconds(1);
+                    ScanRun? done = await scanRuns.GetSuccessfulRunStartedAfterAsync(
+                        request.RepositoryId, _queueOptions.Trigger, queuedBy, cancellationToken);
+                    if (done != null)
+                    {
+                        await _queue.DeleteAsync(message, cancellationToken);
+                        _logger.LogInformation(
+                            "Already done: {ProjectName}/{RepositoryName} from message {MessageId} was scanned by scan run {ScanRunId}, which started after the message was queued at {InsertedOn}",
+                            request.ProjectName, request.RepositoryName, message.MessageId, done.Id, message.InsertedOn.Value);
+                        counts.AlreadyDone++;
+                        return;
+                    }
+                }
 
                 // Is the repository being scanned right now (ADR-027)? Not caught: with the database out of reach every
                 // message would fail the same way, so the run stops (exit 1) and the message is left to reappear.
@@ -255,8 +279,8 @@ namespace RepoScanner.Scanner
         private void LogStopped(string reason, RunCounts counts)
         {
             _logger.LogInformation(
-                "Stopped taking messages from {QueueName}: {Reason}. {ScannedCount} scanned, {FailedCount} failed, {SkippedCount} skipped, {PoisonedCount} poisoned",
-                _queueOptions.Name, reason, counts.Scanned, counts.Failed, counts.Skipped, counts.Poisoned);
+                "Stopped taking messages from {QueueName}: {Reason}. {ScannedCount} scanned, {FailedCount} failed, {SkippedCount} skipped, {AlreadyDoneCount} already done, {PoisonedCount} poisoned",
+                _queueOptions.Name, reason, counts.Scanned, counts.Failed, counts.Skipped, counts.AlreadyDone, counts.Poisoned);
         }
 
         // What one execution did, for its last log line
@@ -267,6 +291,9 @@ namespace RepoScanner.Scanner
             public int Failed { get; set; }
 
             public int Skipped { get; set; }
+
+            // Deleted because a scan run had already done what they asked (Issue 13)
+            public int AlreadyDone { get; set; }
 
             public int Poisoned { get; set; }
         }

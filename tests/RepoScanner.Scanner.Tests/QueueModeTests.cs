@@ -174,6 +174,31 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        // Issue 13 criterion 1: a request sent twice is cloned and scanned once. The second copy is deleted as already
+        // done, because the first copy's scan run started after it was queued.
+        [Test]
+        public async Task TwoCopiesOfOneRequest_GiveOneScanRunAndBothAreDeleted()
+        {
+            string body = Body("secrets-repo");
+            ScanQueueMessage first = _queue.Add(body, insertedOn: DateTimeOffset.UtcNow.AddMinutes(-1));
+            ScanQueueMessage second = _queue.Add(body, insertedOn: DateTimeOffset.UtcNow.AddMinutes(-1));
+
+            (int exitCode, string output) = await RunAsync("scan-nightly");
+
+            IReadOnlyList<JsonElement> lines = LogLines.Read(output);
+            JsonElement alreadyDone = lines.Single(line => LogLines.Message(line).StartsWith("Already done", StringComparison.Ordinal));
+            JsonElement stopped = lines.Single(line => LogLines.Message(line).StartsWith("Stopped taking messages", StringComparison.Ordinal));
+            using (ScannerDbContext context = _database.CreateContext())
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(exitCode, Is.EqualTo(0));
+                Assert.That(context.ScanRuns.Single().Status, Is.EqualTo(ScanRunStatus.Completed));
+                Assert.That(_queue.Deleted, Is.EqualTo(new[] { first, second }));
+                Assert.That(LogLines.Value(alreadyDone, "RepositoryName"), Is.EqualTo("secrets-repo"));
+                Assert.That(LogLines.Value(stopped, "AlreadyDoneCount"), Is.EqualTo("1"));
+            }
+        }
+
         // Criterion 5: a Running ScanRun older than ScanTimeoutPerRepoMinutes + 5 minutes is marked Failed and the
         // repository is scanned
         [Test]

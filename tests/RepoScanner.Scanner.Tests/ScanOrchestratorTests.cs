@@ -487,6 +487,211 @@ namespace RepoScanner.Scanner.Tests
             }
         }
 
+        // Issue 13 criterion 1: the first copy is scanned. Its run started after both copies were queued, so the second is
+        // already done. The scan run's start comes from the real clock, days after the fake one, so after InsertedOn.
+        [Test]
+        public async Task RunAsync_WithTwoCopiesOfOneRequest_ScansOnceAndDeletesBoth()
+        {
+            CreateRepositoryFolder("orders-api");
+            string body = Body("orders-api", OrdersApiId);
+            ScanQueueMessage first = _queue.Add(body, insertedOn: QueuedAgo(TimeSpan.FromMinutes(1)));
+            ScanQueueMessage second = _queue.Add(body, insertedOn: QueuedAgo(TimeSpan.FromMinutes(1)));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            using (ScannerDbContext context = _database.CreateContext())
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(context.ScanRuns.Count(), Is.EqualTo(1));
+                Assert.That(scanner.CallCount, Is.EqualTo(1));
+                Assert.That(_queue.Deleted, Is.EqualTo(new[] { first, second }));
+                Assert.That(_logger.LatestRecord.GetStructuredStateValue("ScannedCount"), Is.EqualTo("1"));
+                Assert.That(_logger.LatestRecord.GetStructuredStateValue("AlreadyDoneCount"), Is.EqualTo("1"));
+            }
+        }
+
+        // Issue 13: a good scan of this lane that started after the message was queued has done what it asks
+        [TestCase(ScanRunStatus.Completed)]
+        [TestCase(ScanRunStatus.PartiallyCompleted)]
+        public async Task RunAsync_WhenAGoodScanStartedAfterTheMessageWasQueued_DeletesItWithoutScanning(ScanRunStatus status)
+        {
+            CreateRepositoryFolder("orders-api");
+            int done = SeedRun(OrdersApiId, status, ScanTrigger.Nightly, startedAgo: TimeSpan.FromMinutes(5));
+            Guid correlationId = new Guid("8e1f3a5c-7b9d-4c2e-a6f8-1d3b5c7e9f0a");
+            ScanQueueMessage message = _queue.Add(Body("orders-api", OrdersApiId, correlationId), insertedOn: QueuedAgo(TimeSpan.FromMinutes(10)));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            FakeLogRecord line = AlreadyDoneLine();
+            using (ScannerDbContext context = _database.CreateContext())
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(_queue.Deleted, Is.EqualTo(new[] { message }));
+                Assert.That(context.ScanRuns.Count(), Is.EqualTo(1), "no new scan run");
+                Assert.That(scanner.CallCount, Is.Zero);
+                Assert.That(line.Level, Is.EqualTo(LogLevel.Information));
+                Assert.That(line.GetStructuredStateValue("ScanRunId"), Is.EqualTo(done.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                Assert.That(line.GetStructuredStateValue("RepositoryName"), Is.EqualTo("orders-api"));
+                Assert.That(LogRecordValues.Scope(line, "CorrelationId"), Is.EqualTo(correlationId));
+            }
+        }
+
+        // Issue 13 criterion 2: a failed scan has not done what was asked, so the repository is scanned again
+        [Test]
+        public async Task RunAsync_WhenTheScanAfterTheMessageFailed_ScansAgain()
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRun(OrdersApiId, ScanRunStatus.Failed, ScanTrigger.Nightly, startedAgo: TimeSpan.FromMinutes(5));
+            _queue.Add(Body("orders-api", OrdersApiId), insertedOn: QueuedAgo(TimeSpan.FromMinutes(10)));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(scanner.CallCount, Is.EqualTo(1));
+                Assert.That(_logger.LatestRecord.GetStructuredStateValue("AlreadyDoneCount"), Is.EqualTo("0"));
+            }
+        }
+
+        // A copy that arrives while the first copy is still being scanned is not done yet: ADR-027 skips it instead
+        [Test]
+        public async Task RunAsync_WhenTheFirstCopyIsStillBeingScanned_CountsItAsSkipped()
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRun(OrdersApiId, ScanRunStatus.Running, ScanTrigger.Nightly, startedAgo: TimeSpan.FromMinutes(2));
+            _queue.Add(Body("orders-api", OrdersApiId), insertedOn: QueuedAgo(TimeSpan.FromMinutes(10)));
+
+            await CreateOrchestrator(new StubScanner()).RunAsync(CancellationToken.None);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(_logger.LatestRecord.GetStructuredStateValue("SkippedCount"), Is.EqualTo("1"));
+                Assert.That(_logger.LatestRecord.GetStructuredStateValue("AlreadyDoneCount"), Is.EqualTo("0"));
+            }
+        }
+
+        // Strictly after: a scan that started before the message was queued, or at that moment, may not have what it asks
+        [TestCase(10)]
+        [TestCase(5)]
+        public async Task RunAsync_WhenTheGoodScanStartedBeforeTheMessageWasQueued_ScansIt(int startedMinutesAgo)
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRun(OrdersApiId, ScanRunStatus.Completed, ScanTrigger.Nightly, startedAgo: TimeSpan.FromMinutes(startedMinutesAgo));
+            _queue.Add(Body("orders-api", OrdersApiId), insertedOn: QueuedAgo(TimeSpan.FromMinutes(5)));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            Assert.That(scanner.CallCount, Is.EqualTo(1));
+        }
+
+        // Azure gives InsertedOn to the whole second, so a message shown as queued at 01:55:00 may have been queued at
+        // 01:55:00.900. A scan that started at 01:55:00.500 may have started before it, so it does not count.
+        [Test]
+        public async Task RunAsync_WhenTheGoodScanStartedInTheSameSecondTheMessageWasQueued_ScansIt()
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRun(OrdersApiId, ScanRunStatus.Completed, ScanTrigger.Nightly, startedAgo: TimeSpan.FromMinutes(5) - TimeSpan.FromMilliseconds(500));
+            _queue.Add(Body("orders-api", OrdersApiId), insertedOn: QueuedAgo(TimeSpan.FromMinutes(5)));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            Assert.That(scanner.CallCount, Is.EqualTo(1));
+        }
+
+        // Issue 13, agreed 2026-10-04: only the same lane counts, so a nightly scan never stands in for "Scan now"
+        [Test]
+        public async Task RunAsync_WhenTheGoodScanCameFromTheOtherQueue_ScansIt()
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRun(OrdersApiId, ScanRunStatus.Completed, ScanTrigger.OnDemand, startedAgo: TimeSpan.FromMinutes(5));
+            _queue.Add(Body("orders-api", OrdersApiId), insertedOn: QueuedAgo(TimeSpan.FromMinutes(10)));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            Assert.That(scanner.CallCount, Is.EqualTo(1));
+        }
+
+        // Issue 13 criterion 3: the check comes before the poison check, so a request already done never raises the alert
+        [Test]
+        public async Task RunAsync_OnTheFourthPickUpOfARequestAlreadyDone_DeletesItInsteadOfPoisoning()
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRun(OrdersApiId, ScanRunStatus.Completed, ScanTrigger.Nightly, startedAgo: TimeSpan.FromMinutes(5));
+            ScanQueueMessage message = _queue.Add(Body("orders-api", OrdersApiId), dequeueCount: 4, insertedOn: QueuedAgo(TimeSpan.FromMinutes(10)));
+
+            await CreateOrchestrator(new StubScanner()).RunAsync(CancellationToken.None);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(_queue.Deleted, Is.EqualTo(new[] { message }));
+                Assert.That(_queue.Poisoned, Is.Empty);
+                Assert.That(_logger.Collector.GetSnapshot().Where(record => record.Level == LogLevel.Warning), Is.Empty);
+            }
+        }
+
+        // Without the time it was queued, nothing says the message is done, so it is scanned
+        [Test]
+        public async Task RunAsync_WithNoQueuedTime_ScansIt()
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRun(OrdersApiId, ScanRunStatus.Completed, ScanTrigger.Nightly, startedAgo: TimeSpan.FromMinutes(5));
+            _queue.Add(Body("orders-api", OrdersApiId));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            Assert.That(scanner.CallCount, Is.EqualTo(1));
+        }
+
+        // 02:50 at +01:00 is 01:50 UTC, before the run that started at 01:55 UTC. Read as 02:50, it would be after it.
+        [Test]
+        public async Task RunAsync_WithAQueuedTimeInAnotherOffset_ComparesInUtc()
+        {
+            CreateRepositoryFolder("orders-api");
+            SeedRun(OrdersApiId, ScanRunStatus.Completed, ScanTrigger.Nightly, startedAgo: TimeSpan.FromMinutes(5));
+            ScanQueueMessage message = _queue.Add(
+                Body("orders-api", OrdersApiId), insertedOn: new DateTimeOffset(2026, 10, 1, 2, 50, 0, TimeSpan.FromHours(1)));
+            StubScanner scanner = new StubScanner();
+
+            await CreateOrchestrator(scanner).RunAsync(CancellationToken.None);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(scanner.CallCount, Is.Zero);
+                Assert.That(_queue.Deleted, Is.EqualTo(new[] { message }));
+            }
+        }
+
+        // Issue 13: a database error in the already-done check is not caught either. Scanning anyway would hide the
+        // outage, and every message would fail the same way, so the run stops and the message is left to reappear.
+        [Test]
+        public async Task RunAsync_WhenTheAlreadyDoneCheckCannotReachTheDatabase_StopsAndLeavesTheMessage()
+        {
+            CreateRepositoryFolder("orders-api");
+            _queue.Add(Body("orders-api", OrdersApiId), insertedOn: QueuedAgo(TimeSpan.FromMinutes(1)));
+            StubScanner scanner = new StubScanner();
+
+            ScanOrchestrator orchestrator = CreateOrchestrator(
+                scanner,
+                configure: services => services.AddScoped<IScanRunRepository>(
+                    provider => new AlreadyDoneCheckFailsScanRunRepository(new ScanRunRepository(provider.GetRequiredService<ScannerDbContext>()))));
+
+            await Assert.ThatAsync(() => orchestrator.RunAsync(CancellationToken.None), Throws.InvalidOperationException);
+
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(scanner.CallCount, Is.Zero);
+                Assert.That(_queue.Deleted, Is.Empty);
+                Assert.That(_queue.Poisoned, Is.Empty);
+            }
+        }
+
         // Issue 8 design, decision 13: every other repository would fail the same way, so the run stops and leaves the
         // messages, rather than failing and in time poisoning each one
         [Test]
@@ -509,7 +714,7 @@ namespace RepoScanner.Scanner.Tests
                 Assert.That(context.ScanRuns.Single().Status, Is.EqualTo(ScanRunStatus.Failed));
                 Assert.That(context.ScanRuns.Single().ErrorMessage, Does.StartWith("Azure DevOps refused the token"));
                 Assert.That(_logger.LatestRecord.Message,
-                    Is.EqualTo("Stopped taking messages from scan-nightly: Azure DevOps refused the token. 0 scanned, 1 failed, 0 skipped, 0 poisoned"));
+                    Is.EqualTo("Stopped taking messages from scan-nightly: Azure DevOps refused the token. 0 scanned, 1 failed, 0 skipped, 0 already done, 0 poisoned"));
             }
         }
 
@@ -631,6 +836,12 @@ namespace RepoScanner.Scanner.Tests
         // A Running scan run, as another run would leave it while scanning, or a crash would leave it for good
         private int SeedRunningRun(Guid azureDevOpsId, TimeSpan startedAgo)
         {
+            return SeedRun(azureDevOpsId, ScanRunStatus.Running, ScanTrigger.OnDemand, startedAgo);
+        }
+
+        // A scan run as an earlier run left it, started startedAgo before the fake clock's time
+        private int SeedRun(Guid azureDevOpsId, ScanRunStatus status, ScanTrigger trigger, TimeSpan startedAgo)
+        {
             using (ScannerDbContext context = _database.CreateContext())
             {
                 Repository repository = context.Repositories.SingleOrDefault(stored => stored.AzureDevOpsId == azureDevOpsId)
@@ -638,8 +849,8 @@ namespace RepoScanner.Scanner.Tests
                 ScanRun scanRun = new ScanRun
                 {
                     Repository = repository,
-                    TriggerType = ScanTrigger.OnDemand,
-                    Status = ScanRunStatus.Running,
+                    TriggerType = trigger,
+                    Status = status,
                     CorrelationId = Guid.NewGuid(),
                     StartedUtc = _time.GetUtcNow().UtcDateTime - startedAgo
                 };
@@ -647,6 +858,17 @@ namespace RepoScanner.Scanner.Tests
                 context.SaveChanges();
                 return scanRun.Id;
             }
+        }
+
+        // When Azure would have queued a message, that long before the fake clock's time
+        private DateTimeOffset QueuedAgo(TimeSpan ago)
+        {
+            return _time.GetUtcNow() - ago;
+        }
+
+        private FakeLogRecord AlreadyDoneLine()
+        {
+            return _logger.Collector.GetSnapshot().Single(record => record.Message.StartsWith("Already done", StringComparison.Ordinal));
         }
 
         // A valid message for the repository, in the format of the Issue 7 design
@@ -672,6 +894,43 @@ namespace RepoScanner.Scanner.Tests
             }
 
             public Task<IReadOnlyList<ScanRun>> GetRunningAsync(Guid azureDevOpsId, CancellationToken cancellationToken)
+            {
+                throw new InvalidOperationException("The database cannot be reached");
+            }
+
+            public Task<ScanRun?> GetSuccessfulRunStartedAfterAsync(Guid azureDevOpsId, ScanTrigger trigger, DateTime startedAfterUtc, CancellationToken cancellationToken)
+            {
+                throw new InvalidOperationException("The database cannot be reached");
+            }
+        }
+
+        // The real repository, except that the already-done check fails as an unreachable database would. Everything after
+        // it works, so a check whose error was caught would go on to scan.
+        private sealed class AlreadyDoneCheckFailsScanRunRepository : IScanRunRepository
+        {
+            private readonly IScanRunRepository _inner;
+
+            public AlreadyDoneCheckFailsScanRunRepository(IScanRunRepository inner)
+            {
+                _inner = inner;
+            }
+
+            public Task<ScanRun> StartRunAsync(RepositoryDetails repository, ScanTrigger trigger, Guid correlationId, DateTime startedUtc, CancellationToken cancellationToken)
+            {
+                return _inner.StartRunAsync(repository, trigger, correlationId, startedUtc, cancellationToken);
+            }
+
+            public Task CompleteRunAsync(int scanRunId, ScanRunCompletion completion, CancellationToken cancellationToken)
+            {
+                return _inner.CompleteRunAsync(scanRunId, completion, cancellationToken);
+            }
+
+            public Task<IReadOnlyList<ScanRun>> GetRunningAsync(Guid azureDevOpsId, CancellationToken cancellationToken)
+            {
+                return _inner.GetRunningAsync(azureDevOpsId, cancellationToken);
+            }
+
+            public Task<ScanRun?> GetSuccessfulRunStartedAfterAsync(Guid azureDevOpsId, ScanTrigger trigger, DateTime startedAfterUtc, CancellationToken cancellationToken)
             {
                 throw new InvalidOperationException("The database cannot be reached");
             }

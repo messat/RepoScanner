@@ -293,13 +293,14 @@ Or by hand in Storage Explorer: open the queue, **Add Message**, paste the messa
 dotnet run --project src/RepoScanner.Scanner
 ```
 
-- Each message is scanned in turn, and deleted once its scan run is saved. The last line says why the run stopped and counts what it did: `Stopped taking messages from scan-nightly: queue empty. 1 scanned, 0 failed, 0 skipped, 0 poisoned`.
+- Each message is scanned in turn, and deleted once its scan run is saved. The last line says why the run stopped and counts what it did: `Stopped taking messages from scan-nightly: queue empty. 1 scanned, 0 failed, 0 skipped, 0 already done, 0 poisoned`.
 - **Each repository is cloned** into a new folder in `%TEMP%\reposcanner`, with only its latest commit, and the folder is deleted after the scan, whether it passed or failed. The log says `Cloned Kudos Wall/victim-repo main at <commit> in <n> ms; <n> MB free on C:\, <n> before`, and the commit is saved as the scan run's `CommitSha`.
 - **A failed scan** is saved as a `Failed` scan run with the reason, and its message is left. It reappears after a minute locally (65 in Azure) and is tried again the next time you run. On its 4th pick-up it is moved to the lane's poison queue. A request for a repository that does not exist shows this, with git's reason: run `.\scripts\enqueue-local.ps1 -RepositoryName ghost`, then the scanner four times, a minute apart.
 - **A rejected PAT**, wrong, expired or revoked, stops the run, since every other repository would fail the same way. The scan run is `Failed` with `Azure DevOps refused the token ...`, the log ends `Azure DevOps refused the token, scanner stopped: ...`, the process exits 1, and the message is left for when the token is fixed. No sign-in window opens.
 - **A clone still going after 8 minutes** is stopped, and its scan run is `Failed` with `The clone took longer than 8 minutes and was stopped (Scanner:AzureDevOps:CloneTimeoutMinutes)`.
 - **A message the scanner cannot read**, such as `-Malformed`, goes straight to the poison queue, with the reason in the log, and gets no scan run.
 - **A repository another run is scanning**, with a `Running` scan run 20 minutes old or less, is skipped: the message is deleted and the log says which run is scanning it. A `Running` scan run older than that was left by a run that died: it is marked `Failed` as abandoned, and the repository is scanned ([ADR-027](docs/adr/ADR-027-skip-a-repository-being-scanned-take-over-an-abandoned-run.md)).
+- **A request already done**, such as one sent twice, is deleted without a scan: a `Completed` or `PartiallyCompleted` scan run of the same queue started after the message was queued. The log says `Already done` with that scan run's ID, and the last line counts it as `already done`. This is checked before the 4th pick-up, so such a message is never poisoned. A `Failed` scan run does not count, and a nightly scan never stands in for "Scan now" ([ADR-027](docs/adr/ADR-027-skip-a-repository-being-scanned-take-over-an-abandoned-run.md), amended for Issue 13).
 - A message in the poison queue is kept for 30 days. To try it again, fix the cause and move it back to its queue with Storage Explorer's **Move**.
 - The run stops when the queue is empty, or when less than 15 minutes is left of its 50-minute budget, leaving the rest of the messages for the next run.
 
@@ -461,6 +462,7 @@ The queue loop:
 
 - In Azure, a scan that crashes is tried again only when its message reappears, about 65 minutes later. For "Scan now", the dashboard shows the run as `Failed` on the next pick-up, and the user can click again.
 - A skipped request is not kept. If the scan it gave way to then fails, the repository waits for the next night or another "Scan now".
+- "Scan now" clicked while that repository is being scanned is skipped, even after a push the running scan may have missed. The push waits for the next scan (Issue 14).
 - Two runs that check the same repository at the same instant can both scan it. Its findings are not duplicated, but there are two scan runs ([ADR-027](docs/adr/ADR-027-skip-a-repository-being-scanned-take-over-an-abandoned-run.md)).
 - A message the scanner cannot read shows only in the log and the poison queue, not in the dashboard.
 - A repository renamed since its message was sent is looked for under its old name, so its clone fails; the next nightly message has the new one.
