@@ -266,3 +266,31 @@ stages:
                     scriptLocation: scriptPath
                     scriptPath: deploy/Deploy-ScannerJob.ps1
                     arguments: -Lane ondemand -Image $(registry).azurecr.io/$(image):$(Build.BuildId)
+
+  # After the scanner, in Steven Wilson's order: the dashboard stops at start-up if the newest migration is missing,
+  # so it is deployed only once Migrate has run in the same run (decision 5)
+  - stage: DeployDashboard
+    displayName: Deploy the dashboard
+    dependsOn: DeployScanner
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - deployment: DeployDashboard
+        environment: reposcanner-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: dashboard
+                - checkout: self
+
+                # Deploys nothing unless Easy Auth is on and signs in through id-dashboard, then puts the web app's
+                # settings back and deploys this run's zip (decisions 15 and 16)
+                - task: AzureCLI@2
+                  displayName: Deploy app-reposcanner-dashboard-dev
+                  inputs:
+                    azureSubscription: ${{ variables.serviceConnection }}
+                    scriptType: pscore
+                    scriptLocation: scriptPath
+                    scriptPath: deploy/Deploy-Dashboard.ps1
+                    arguments: -Package $(Pipeline.Workspace)/dashboard/dashboard.zip

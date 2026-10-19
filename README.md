@@ -455,6 +455,7 @@ What a merge into `develop`, here or in the Dashboard repository, does:
 3. **Image:** the scanner's image is pushed to `enqreposcannerdev` as `reposcanner:<build ID>`, never `latest` ([ADR-005](docs/adr/ADR-005-immutable-image-tags.md)).
 4. **Migrate:** the migration script is applied to Azure SQL as `id-pipeline`. If it fails, nothing is deployed ([Who applies migrations](#who-applies-migrations)).
 5. **Deploy the scanner:** `deploy/Deploy-ScannerJob.ps1` creates `job-scanner-nightly-dev` and `job-scanner-ondemand-dev` if they are missing, or updates them to the new image and puts every setting back.
+6. **Deploy the dashboard:** `deploy/Deploy-Dashboard.ps1` checks Easy Auth is on, puts the web app's settings back, starts it if it is stopped and deploys the zip.
 
 A change only to `docs` or to Markdown files runs nothing. A pull request into `develop` or `main` runs the Build stage only. The pipeline signs in through the service connection `sc-reposcanner-dev` as `id-pipeline`, so Azure DevOps holds no secret ([ADR-007](docs/adr/ADR-007-managed-identity-throughout.md)).
 
@@ -480,6 +481,31 @@ To start one execution by hand, for example to scan what is waiting on a queue w
 ```bash
 az containerapp job start --name job-scanner-ondemand-dev --resource-group RepoAnalysis-dev
 ```
+
+### The dashboard
+
+The web app `app-reposcanner-dashboard-dev` runs on the App Service plan `dashboard-plan-dev` (Linux B1) as `id-dashboard` ([ADR-003](docs/adr/ADR-003-app-service-linux-for-the-blazor-dashboard.md)). The pipeline deploys it after the scanner, so the migration it needs is always there first. `deploy/Deploy-Dashboard.ps1` deploys nothing unless Easy Auth is set up as below, then puts these settings back on every run, so a change made in the portal does not last:
+
+| Setting | Value |
+|---|---|
+| WebSockets, Always On, ARR affinity | On |
+| HTTPS only, FTPS, minimum TLS | On, disabled, 1.2 |
+| Startup command | `dotnet Dashboard.dll` |
+| `AZURE_CLIENT_ID` | `id-dashboard`'s client ID |
+| `Dashboard__Database__ConnectionString` | `RepoScanner` on `sql-reposcanner-dev`, signing in as `id-dashboard` |
+| `Dashboard__Queue__ServiceUri` | `https://strreposcannerdev.queue.core.windows.net` |
+
+It sets those app settings and deletes none, since Easy Auth's set-up adds its own.
+
+### Easy Auth (once, by hand)
+
+Turning Easy Auth on creates an app registration, which the pipeline's identity cannot do, so it is done by hand, once, before the first deployment. It signs in anyone in the Blacklight tenant, and uses `id-dashboard` as a federated credential, so there is no client secret to store or renew ([ADR-007](docs/adr/ADR-007-managed-identity-throughout.md)).
+
+1. In the web app, **Authentication**, **Add identity provider**, **Microsoft**: create a new app registration named `app-reposcanner-dashboard-dev`, for the current tenant only, requiring authentication, with an HTTP 302 redirect for requests that are not signed in.
+2. In the Entra admin centre, open that app registration, **Certificates & secrets**, **Federated credentials**, **Add credential**: the managed identity scenario, `id-dashboard`, named `id-dashboard-easy-auth`, with the issuer, subject and audience the portal fills in.
+3. In the web app, **Environment variables**: add `OVERRIDE_USE_MI_FIC_ASSERTION_CLIENTID` with `id-dashboard`'s client ID.
+4. In the web app, **Authentication**, edit the Microsoft provider: set **Client secret setting name** to `OVERRIDE_USE_MI_FIC_ASSERTION_CLIENTID`.
+5. Once a sign-in works, delete the app setting `MICROSOFT_PROVIDER_AUTHENTICATION_SECRET` and the client secret in the app registration, then sign in again in a new private window.
 
 ## Logs
 
