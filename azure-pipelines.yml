@@ -1,0 +1,181 @@
+# RepoScanner's pipeline, for the scanner and the dashboard (scanner Issue 12, #72; dashboard Issue 7, #99;
+# docs/design/2026-10-19-build-and-deployment-pipelines.md).
+#
+# One pipeline for both apps, as Steven Wilson asked (decision 5): every merge into develop, in this repository or in
+# the Dashboard repository, builds and tests both apps, then deploys the scanner and, after it, the dashboard. The
+# enqueuer has its own pipeline in its own repository. A change only to documentation does not run it (decision 8).
+# Pull requests into develop and main, in either repository, run the Build stage only, through a build validation
+# policy in each repository: Azure Repos ignores a pr: section in a YAML file, so there is none here (decision 8).
+# Every stage runs on a Microsoft-hosted Linux agent, the same OS as the scanner's container (decision 7).
+
+trigger:
+  branches:
+    include:
+      - develop
+  paths:
+    exclude:
+      - docs
+      - '**/*.md'
+
+resources:
+  repositories:
+    # The dashboard's code, checked out from its own repository rather than copied here (decision 6). A merge into its
+    # develop starts this pipeline too, with this repository's develop and the Dashboard commit that started it.
+    - repository: dashboard
+      type: git
+      name: Lumina/Dashboard
+      ref: refs/heads/develop
+      trigger:
+        branches:
+          include:
+            - develop
+        paths:
+          exclude:
+            - docs
+            - '**/*.md'
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # The Workload Identity Federation connection, signed in as id-pipeline, so Azure DevOps holds no secret (decision 19)
+  serviceConnection: sc-reposcanner-dev
+  # The shared registry and the scanner's image. The tag is always the build ID, never latest (decision 11)
+  registry: enqreposcannerdev
+  image: reposcanner
+
+stages:
+  # Both apps are built and tested before anything reaches Azure, so a broken dashboard never leaves half a release
+  # (decision 9)
+  - stage: Build
+    displayName: Build and test
+    jobs:
+      - job: Scanner
+        displayName: Build and test the scanner
+        steps:
+          - checkout: self
+
+          - task: UseDotNet@2
+            displayName: Install the SDK named in global.json
+            inputs:
+              packageType: sdk
+              useGlobalJson: true
+
+          - script: dotnet restore RepoScanner.sln
+            displayName: Restore
+
+          - script: dotnet build RepoScanner.sln --configuration Release --no-restore
+            displayName: Build
+
+          # The 80% line coverage gate on Core and Scanner is in Directory.Build.props, so a drop below it fails this
+          # step, as it does locally (decision 10)
+          - script: dotnet test RepoScanner.sln --configuration Release --no-build --logger trx --results-directory $(Agent.TempDirectory)/TestResults
+            displayName: Test, with the coverage gate
+
+          - script: dotnet tool restore
+            displayName: Restore dotnet-ef
+
+          # The idempotent script the Migrate stage applies (decision 12), kept as an artifact so what was applied can be
+          # read afterwards. ScannerDbContextFactory needs a connection string to build the context; writing the script
+          # never connects, and the string holds no secret (decision 10).
+          - script: dotnet ef migrations script --idempotent --project src/RepoScanner.Data --startup-project src/RepoScanner.Data --configuration Release --no-build --output $(Build.ArtifactStagingDirectory)/migrate/migrate.sql
+            displayName: Write the migration script
+            env:
+              Scanner__Database__ConnectionString: Server=tcp:sql-reposcanner-dev.database.windows.net,1433;Database=RepoScanner;Authentication=Active Directory Default;Encrypt=True
+
+          - task: PublishTestResults@2
+            displayName: Publish the test results
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/TestResults/*.trx'
+              testRunTitle: RepoScanner
+
+          - task: PublishCodeCoverageResults@2
+            displayName: Publish the coverage report
+            condition: succeededOrFailed()
+            inputs:
+              summaryFileLocation: '$(Build.SourcesDirectory)/tests/**/TestResults/coverage/coverage.cobertura.xml'
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish the migration script
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/migrate
+              artifact: migrate
+
+      - job: Dashboard
+        displayName: Build and test the dashboard
+        # After the scanner's job, in Steven Wilson's order (decision 9)
+        dependsOn: Scanner
+        steps:
+          - checkout: dashboard
+
+          - task: UseDotNet@2
+            displayName: Install the SDK named in global.json
+            inputs:
+              packageType: sdk
+              useGlobalJson: true
+
+          - script: dotnet restore Dashboard.sln
+            displayName: Restore
+
+          - script: dotnet build Dashboard.sln --configuration Release --no-restore
+            displayName: Build
+
+          # The dashboard's own 80% gate, in its Directory.Build.props (decision 10)
+          - script: dotnet test Dashboard.sln --configuration Release --no-build --logger trx --results-directory $(Agent.TempDirectory)/TestResults
+            displayName: Test, with the coverage gate
+
+          - script: dotnet publish src/Dashboard/Dashboard.csproj --configuration Release --no-build --output $(Build.ArtifactStagingDirectory)/dashboard-app
+            displayName: Publish the app
+
+          # The zip the DeployDashboard stage deploys, with Dashboard.dll at its root (decision 15)
+          - task: ArchiveFiles@2
+            displayName: Zip the app
+            inputs:
+              rootFolderOrFile: $(Build.ArtifactStagingDirectory)/dashboard-app
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/dashboard/dashboard.zip
+
+          - task: PublishTestResults@2
+            displayName: Publish the test results
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/TestResults/*.trx'
+              testRunTitle: Dashboard
+
+          - task: PublishCodeCoverageResults@2
+            displayName: Publish the coverage report
+            condition: succeededOrFailed()
+            inputs:
+              summaryFileLocation: '$(Build.SourcesDirectory)/tests/Dashboard.Tests/TestResults/coverage/coverage.cobertura.xml'
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish the dashboard's zip
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/dashboard
+              artifact: dashboard
+
+  - stage: Image
+    displayName: Build and push the scanner's image
+    dependsOn: Build
+    # Only a merge into develop reaches Azure: a pull request, or a run of any other branch, stops after Build (decision 9)
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: Image
+        steps:
+          - task: AzureCLI@2
+            displayName: Push $(image):$(Build.BuildId) to $(registry)
+            inputs:
+              azureSubscription: ${{ variables.serviceConnection }}
+              scriptType: pscore
+              scriptLocation: inlineScript
+              # Any failed command fails the step, rather than the script carrying on to the next one
+              inlineScript: |
+                $ErrorActionPreference = 'Stop'
+                $PSNativeCommandUseErrorActionPreference = $true
+                az acr login --name $(registry)
+                docker build --tag $(registry).azurecr.io/$(image):$(Build.BuildId) .
+                docker push $(registry).azurecr.io/$(image):$(Build.BuildId)
