@@ -1,6 +1,6 @@
 # ADR-029: This release runs locally, without CI/CD pipelines
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-030](ADR-030-deploy-to-a-dev-environment-through-azure-pipelines.md) on 2026-10-19
 - **Date:** 2026-10-04
 - **Source:** Decided on 2026-10-04 while planning Issue 11 (#66), task #120
 
