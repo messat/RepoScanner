@@ -179,3 +179,53 @@ stages:
                 az acr login --name $(registry)
                 docker build --tag $(registry).azurecr.io/$(image):$(Build.BuildId) .
                 docker push $(registry).azurecr.io/$(image):$(Build.BuildId)
+
+  # The schema is changed here and only here, as id-pipeline, before either app is deployed; if it fails, nothing is
+  # deployed (decision 12, ADR-006, ADR-008). The script is idempotent: the first run built every table in the empty
+  # database, and a later run applies only the migrations it has not seen.
+  - stage: Migrate
+    displayName: Apply the migrations to Azure SQL
+    dependsOn: Image
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: Migrate
+        steps:
+          - checkout: none
+
+          - download: current
+            artifact: migrate
+
+          - task: AzureCLI@2
+            displayName: Apply migrate.sql to RepoScanner as id-pipeline
+            inputs:
+              azureSubscription: ${{ variables.serviceConnection }}
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $ErrorActionPreference = 'Stop'
+                $PSNativeCommandUseErrorActionPreference = $true
+
+                # go-sqlcmd, which signs in with this task's Azure CLI session as id-pipeline: no password and no SQL
+                # login. The agent's own sqlcmd may be the ODBC one, which cannot (decision 12).
+                $PSNativeCommandUseErrorActionPreference = $false
+                dpkg -s sqlcmd *> $null
+                $installed = $LASTEXITCODE -eq 0
+                $PSNativeCommandUseErrorActionPreference = $true
+                if (-not $installed) {
+                    if (-not (Test-Path /etc/apt/sources.list.d/microsoft-prod.list)) {
+                        curl -sSL -o /tmp/packages-microsoft-prod.deb "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+                        sudo dpkg -i /tmp/packages-microsoft-prod.deb
+                    }
+                    sudo apt-get update --yes
+                    sudo apt-get install --yes sqlcmd
+                }
+                $sqlcmd = dpkg -L sqlcmd | Where-Object { $_ -like '*/bin/sqlcmd' } | Select-Object -First 1
+                & $sqlcmd --version
+
+                # dotnet ef writes the script with a UTF-8 byte order mark; written again without one, so the first
+                # batch cannot start with a stray character
+                $script = '$(Pipeline.Workspace)/migrate/migrate.sql'
+                Set-Content -Path $script -Value (Get-Content -Path $script -Raw) -Encoding utf8NoBOM -NoNewline
+
+                # -N mandatory checks the server's certificate; -b stops at the first failed batch, failing the stage
+                & $sqlcmd -S 'tcp:sql-reposcanner-dev.database.windows.net,1433' -d RepoScanner --authentication-method ActiveDirectoryDefault -N mandatory -l 30 -b -i $script

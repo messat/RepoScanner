@@ -180,10 +180,68 @@ A change that removes or renames something follows expand/contract across releas
 ### Who applies migrations
 
 - **Locally:** you, with `dotnet ef database update` as above.
-- **Azure:** not in this release ([ADR-029](docs/adr/ADR-029-this-release-runs-locally-without-pipelines.md)). When it comes, only the pipeline, which generates an idempotent script with `dotnet ef migrations script --idempotent` and applies it before deploying ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md)).
+- **Azure:** only the pipeline's Migrate stage, as `id-pipeline`. Its Build stage writes an idempotent script with `dotnet ef migrations script --idempotent`, and Migrate applies it before either app is deployed; if it fails, nothing is deployed ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md), [ADR-030](docs/adr/ADR-030-deploy-to-a-dev-environment-through-azure-pipelines.md)).
 - **Never the scanner:** it has no rights to change the schema ([ADR-008](docs/adr/ADR-008-two-privilege-levels.md)), so it never calls `Migrate()` or `EnsureCreated()`.
 
 If `dotnet ef` says `Scanner__Database__ConnectionString` is not set, repeat step 2 of the setup and open a new terminal.
+
+### Database users in Azure
+
+The Azure SQL database, `RepoScanner` on `sql-reposcanner-dev`, has three users, added by hand by the server's Entra admin. No pipeline creates a user or grants a role ([ADR-030](docs/adr/ADR-030-deploy-to-a-dev-environment-through-azure-pipelines.md)). Each is created by its identity's object ID, because a spike-era `id-scanner` shares the name in Entra ID.
+
+| User | Roles and permissions | Why |
+|---|---|---|
+| `id-scanner` | db_datareader, db_datawriter | Reads and writes data, never the schema ([ADR-008](docs/adr/ADR-008-two-privilege-levels.md)) |
+| `id-dashboard` | db_datareader, db_datawriter | The same; it writes for triage |
+| `id-pipeline` | db_ddladmin, db_datareader, db_datawriter, REFERENCES on `dbo` | Applies the migrations; REFERENCES lets it create foreign keys |
+
+The script, run in the database from the portal's Query editor, signed in with Entra:
+
+```sql
+CREATE USER [id-scanner] FROM EXTERNAL PROVIDER WITH OBJECT_ID = 'fce27e24-9ffa-40e2-a01e-06415f765586';
+ALTER ROLE db_datareader ADD MEMBER [id-scanner];
+ALTER ROLE db_datawriter ADD MEMBER [id-scanner];
+CREATE USER [id-dashboard] FROM EXTERNAL PROVIDER WITH OBJECT_ID = '8c4068b3-51a9-4c54-b95f-356b9ef4a894';
+ALTER ROLE db_datareader ADD MEMBER [id-dashboard];
+ALTER ROLE db_datawriter ADD MEMBER [id-dashboard];
+CREATE USER [id-pipeline] FROM EXTERNAL PROVIDER WITH OBJECT_ID = 'f7ab4ce3-509a-471d-8233-79987139e26e';
+ALTER ROLE db_ddladmin ADD MEMBER [id-pipeline];
+ALTER ROLE db_datareader ADD MEMBER [id-pipeline];
+ALTER ROLE db_datawriter ADD MEMBER [id-pipeline];
+GRANT REFERENCES ON SCHEMA::dbo TO [id-pipeline];
+```
+
+To see who has what, the users with their roles, then their other permissions:
+
+```sql
+SELECT u.name AS [user], u.type_desc, r.name AS [role]
+FROM sys.database_principals AS u
+LEFT JOIN sys.database_role_members AS m ON m.member_principal_id = u.principal_id
+LEFT JOIN sys.database_principals AS r ON r.principal_id = m.role_principal_id
+WHERE u.type IN ('E', 'X')
+ORDER BY u.name, r.name;
+
+SELECT USER_NAME(p.grantee_principal_id) AS [user], p.permission_name, p.class_desc
+FROM sys.database_permissions AS p
+WHERE p.grantee_principal_id IN (SELECT principal_id FROM sys.database_principals WHERE type IN ('E', 'X'));
+```
+
+To rebuild the database, as on 2026-10-19:
+
+1. Delete it, then create it again, empty, with the same settings:
+
+   ```bash
+   az sql db delete --resource-group RepoAnalysis-dev --server sql-reposcanner-dev --name RepoScanner --yes
+   ```
+
+   ```bash
+   az sql db create --resource-group RepoAnalysis-dev --server sql-reposcanner-dev --name RepoScanner --service-objective Basic --backup-storage-redundancy Local
+   ```
+
+2. Run the script above in the new database.
+3. Run the pipeline. Its Migrate stage builds every table.
+
+A deleted database can be restored from the server's Deleted databases page for 7 days.
 
 ## Scan a local folder
 
