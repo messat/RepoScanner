@@ -147,7 +147,17 @@ if ($PSCmdlet.ShouldProcess($WebApp, 'Apply settings')) {
             '--ftps-state', 'Disabled',
             '--min-tls-version', '1.2',
             '--startup-file', 'dotnet Dashboard.dll')) | Out-Null
-    Invoke-Az (@('webapp', 'update') + $webAppArguments + @('--https-only', 'true', '--client-affinity-enabled', 'true')) | Out-Null
+    # A patch of just these two properties: az webapp update writes the whole site back, App Service plan included,
+    # and id-pipeline's Website Contributor role is on the web app alone (final review). The body goes in a file, as
+    # Windows PowerShell 5.1 strips the quotes from JSON passed to a native command.
+    $bodyFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($bodyFile, '{"properties":{"httpsOnly":true,"clientAffinityEnabled":true}}')
+    try {
+        Invoke-Az @('rest', '--method', 'patch', '--url', "https://management.azure.com$($site.id)?api-version=2023-12-01", '--body', "@$bodyFile") | Out-Null
+    }
+    finally {
+        Remove-Item -Path $bodyFile -Force
+    }
     Invoke-Az (@('webapp', 'config', 'appsettings', 'set') + $webAppArguments + @(
             '--settings',
             "AZURE_CLIENT_ID=$clientId",
