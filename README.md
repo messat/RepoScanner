@@ -444,6 +444,43 @@ On top of the runtime, the image adds git and its packages (79 MB unpacked) and 
 
 The project files are copied and restored before the code, so the restore step stays `CACHED` until something copied before it changes: a `.csproj`, `Directory.Packages.props` (the package versions), `Directory.Build.props`, `global.json` or `.editorconfig`. A change to the code alone never re-runs it. Installing git is `CACHED` until the runtime image changes.
 
+## Deployment
+
+The scanner and the dashboard are deployed to the dev environment, the resource group `RepoAnalysis-dev` in UK West, by this repository's pipeline, [azure-pipelines.yml](azure-pipelines.yml) ([ADR-030](docs/adr/ADR-030-deploy-to-a-dev-environment-through-azure-pipelines.md)). The enqueuer has its own pipeline in its own repository. Every setting, and the reason for it, is in the [pipelines design](docs/design/2026-10-19-build-and-deployment-pipelines.md).
+
+What a merge into `develop`, here or in the Dashboard repository, does:
+
+1. The pipeline checks out this repository and the Dashboard repository's `develop`.
+2. **Build:** both apps are restored, built and tested on a Microsoft-hosted Linux agent, each with its 80% line coverage gate. The scanner's job also writes the migration script; the dashboard's zips the app.
+3. **Image:** the scanner's image is pushed to `enqreposcannerdev` as `reposcanner:<build ID>`, never `latest` ([ADR-005](docs/adr/ADR-005-immutable-image-tags.md)).
+4. **Migrate:** the migration script is applied to Azure SQL as `id-pipeline`. If it fails, nothing is deployed ([Who applies migrations](#who-applies-migrations)).
+5. **Deploy the scanner:** `deploy/Deploy-ScannerJob.ps1` creates `job-scanner-nightly-dev` and `job-scanner-ondemand-dev` if they are missing, or updates them to the new image and puts every setting back.
+
+A change only to `docs` or to Markdown files runs nothing. A pull request into `develop` or `main` runs the Build stage only. The pipeline signs in through the service connection `sc-reposcanner-dev` as `id-pipeline`, so Azure DevOps holds no secret ([ADR-007](docs/adr/ADR-007-managed-identity-throughout.md)).
+
+### The scanner's jobs
+
+Both run in the Container Apps environment `code-reposcanner-dev` as `id-scanner`, which also pulls their image and reads the PAT from Key Vault ([ADR-014](docs/adr/ADR-014-two-runtime-identities.md)).
+
+| Setting | `job-scanner-nightly-dev` | `job-scanner-ondemand-dev` |
+|---|---|---|
+| Started by | A message on `scan-nightly`, read as `id-scanner` | A message on `scan-ondemand`, the same |
+| Executions | At most one at a time ([ADR-012](docs/adr/ADR-012-maxexecutions-1-raised-on-evidence.md)), the queue checked every 30 seconds | The same |
+| Timeout | 3,600 seconds, above the 60-minute `Scanner:Execution:MaxRunDurationMinutes` | The same |
+| Retries | None: a failed message is retried by the queue, then poisoned ([ADR-013](docs/adr/ADR-013-delete-after-upsert-poison-queue-after-three-failures.md)) | The same |
+| CPU and memory | 1 vCPU, 2 GiB | The same |
+| `Scanner__Queue__Name` | `scan-nightly` | `scan-ondemand` |
+
+Both also have `AZURE_CLIENT_ID` (`id-scanner`'s client ID), `Scanner__Queue__ServiceUri` (`https://strreposcannerdev.queue.core.windows.net`), `Scanner__AzureDevOps__OrganizationUrl`, `Scanner__AzureDevOps__Pat` as a Key Vault reference that names no version, so a renewed PAT is picked up without a deployment, and `Scanner__Database__ConnectionString` signing in as `id-scanner`. Every other setting keeps its Production default.
+
+The jobs are changed only by the pipeline. To roll back, run the deploy stages of an earlier run again: each deploys its own image. The schema is not rolled back, which expand/contract allows for ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md)).
+
+To start one execution by hand, for example to scan what is waiting on a queue without waiting for the next check:
+
+```bash
+az containerapp job start --name job-scanner-ondemand-dev --resource-group RepoAnalysis-dev
+```
+
 ## Logs
 
 The scanner writes its log to the console. `dotnet run`, which uses `Development`, prints readable text; everywhere else, the container and Azure included, each line is one JSON object, because Container Apps sends each line to Log Analytics, which can then search any field ([ADR-028](docs/adr/ADR-028-json-log-lines-on-stdout-outside-development.md), [Issue 10 design](docs/design/2026-10-02-observability-and-run-summary.md)). `Scanner:Logging:Format` (`Text` or `Json`) overrides that.
