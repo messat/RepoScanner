@@ -231,7 +231,7 @@ The text to add as `docs/adr/ADR-030-deploy-to-a-dev-environment-through-azure-p
 
 ## Left to the builder
 
-- **How Migrate runs the script.** `sqlcmd` reads the `GO` separators in the idempotent script. Whether `ubuntu-latest`'s `sqlcmd` signs in through the Azure CLI's session, or the step uses a token from `az account get-access-token --resource https://database.windows.net/`, is settled on the first run. It must not use a password or a SQL login.
+- **How Migrate runs the script.** `sqlcmd` reads the `GO` separators in the idempotent script. Whether `ubuntu-latest`'s `sqlcmd` signs in through the Azure CLI's session, or the step uses a token from `az account get-access-token --resource https://database.windows.net/`, is settled on the first run. It must not use a password or a SQL login. **Settled on 2026-10-19, before the first run:** `ubuntu-latest` is Ubuntu 24.04, and Microsoft's 24.04 repository has no `sqlcmd` package (only the ODBC `mssql-tools18`), so Migrate downloads go-sqlcmd v1.10.0 from Microsoft's GitHub releases, runs it only if its SHA-256 matches the one pinned in the pipeline, and signs in with `--authentication-method ActiveDirectoryDefault`, which uses the Azure CLI task's session as `id-pipeline`.
 - **Checkout folders.** A job with one checkout puts that repository at the sources folder's root, and a job with two puts each in a folder named after it. Each Build job checks out one repository; the deploy jobs check out RepoScanner for the scripts.
 - **Whether the web app must be started before the zip is deployed,** if a stopped app's deployment endpoint refuses it.
 - **Path filters on the Dashboard trigger,** if the repository resource does not support them as the `self` trigger does.

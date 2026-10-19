@@ -206,21 +206,28 @@ stages:
                 $PSNativeCommandUseErrorActionPreference = $true
 
                 # go-sqlcmd, which signs in with this task's Azure CLI session as id-pipeline: no password and no SQL
-                # login. The agent's own sqlcmd may be the ODBC one, which cannot (decision 12).
-                $PSNativeCommandUseErrorActionPreference = $false
-                dpkg -s sqlcmd *> $null
-                $installed = $LASTEXITCODE -eq 0
-                $PSNativeCommandUseErrorActionPreference = $true
-                if (-not $installed) {
-                    if (-not (Test-Path /etc/apt/sources.list.d/microsoft-prod.list)) {
-                        curl -sSL -o /tmp/packages-microsoft-prod.deb "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
-                        sudo dpkg -i /tmp/packages-microsoft-prod.deb
-                    }
-                    sudo apt-get update --yes
-                    sudo apt-get install --yes sqlcmd
+                # login (decision 12). Microsoft's Ubuntu 24.04 repository, which ubuntu-latest uses, has no sqlcmd
+                # package, so one release is downloaded from Microsoft's GitHub releases and run only if its SHA-256
+                # is the one pinned here (final review). To move to a newer release, change both lines.
+                $sqlcmdVersion = 'v1.10.0'
+                $sqlcmdSha256 = '92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987'
+                $archive = '$(Agent.TempDirectory)/sqlcmd-linux-amd64.tar.bz2'
+                curl -fsSL -o $archive "https://github.com/microsoft/go-sqlcmd/releases/download/$sqlcmdVersion/sqlcmd-linux-amd64.tar.bz2"
+                $hash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($hash -ne $sqlcmdSha256) {
+                    throw "sqlcmd-linux-amd64.tar.bz2 $sqlcmdVersion has SHA-256 $hash, not the pinned $sqlcmdSha256, so it was not run"
                 }
-                $sqlcmd = dpkg -L sqlcmd | Where-Object { $_ -like '*/bin/sqlcmd' } | Select-Object -First 1
+                $sqlcmdFolder = '$(Agent.TempDirectory)/go-sqlcmd'
+                New-Item -ItemType Directory -Path $sqlcmdFolder -Force | Out-Null
+                tar -xjf $archive -C $sqlcmdFolder
+                $sqlcmd = Join-Path $sqlcmdFolder 'sqlcmd'
                 & $sqlcmd --version
+
+                $server = 'tcp:sql-reposcanner-dev.database.windows.net,1433'
+
+                # Who it signed in as, before anything is applied, so the log shows the schema is changed only by
+                # id-pipeline (ADR-008)
+                & $sqlcmd -S $server -d RepoScanner --authentication-method ActiveDirectoryDefault -N mandatory -l 30 -b -Q "SET NOCOUNT ON; SELECT SUSER_SNAME() AS SignedInAs"
 
                 # dotnet ef writes the script with a UTF-8 byte order mark; written again without one, so the first
                 # batch cannot start with a stray character
@@ -228,7 +235,7 @@ stages:
                 Set-Content -Path $script -Value (Get-Content -Path $script -Raw) -Encoding utf8NoBOM -NoNewline
 
                 # -N mandatory checks the server's certificate; -b stops at the first failed batch, failing the stage
-                & $sqlcmd -S 'tcp:sql-reposcanner-dev.database.windows.net,1433' -d RepoScanner --authentication-method ActiveDirectoryDefault -N mandatory -l 30 -b -i $script
+                & $sqlcmd -S $server -d RepoScanner --authentication-method ActiveDirectoryDefault -N mandatory -l 30 -b -i $script
 
   - stage: DeployScanner
     displayName: Deploy the scanner's two jobs
