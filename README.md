@@ -180,10 +180,68 @@ A change that removes or renames something follows expand/contract across releas
 ### Who applies migrations
 
 - **Locally:** you, with `dotnet ef database update` as above.
-- **Azure:** not in this release ([ADR-029](docs/adr/ADR-029-this-release-runs-locally-without-pipelines.md)). When it comes, only the pipeline, which generates an idempotent script with `dotnet ef migrations script --idempotent` and applies it before deploying ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md)).
+- **Azure:** only the pipeline's Migrate stage, as `id-pipeline`. Its Build stage writes an idempotent script with `dotnet ef migrations script --idempotent`, and Migrate applies it before either app is deployed; if it fails, nothing is deployed ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md), [ADR-030](docs/adr/ADR-030-deploy-to-a-dev-environment-through-azure-pipelines.md)).
 - **Never the scanner:** it has no rights to change the schema ([ADR-008](docs/adr/ADR-008-two-privilege-levels.md)), so it never calls `Migrate()` or `EnsureCreated()`.
 
 If `dotnet ef` says `Scanner__Database__ConnectionString` is not set, repeat step 2 of the setup and open a new terminal.
+
+### Database users in Azure
+
+The Azure SQL database, `RepoScanner` on `sql-reposcanner-dev`, has three users, added by hand by the server's Entra admin. No pipeline creates a user or grants a role ([ADR-030](docs/adr/ADR-030-deploy-to-a-dev-environment-through-azure-pipelines.md)). Each is created by its identity's object ID, because a spike-era `id-scanner` shares the name in Entra ID.
+
+| User | Roles and permissions | Why |
+|---|---|---|
+| `id-scanner` | db_datareader, db_datawriter | Reads and writes data, never the schema ([ADR-008](docs/adr/ADR-008-two-privilege-levels.md)) |
+| `id-dashboard` | db_datareader, db_datawriter | The same; it writes for triage |
+| `id-pipeline` | db_ddladmin, db_datareader, db_datawriter, REFERENCES on `dbo` | Applies the migrations; REFERENCES lets it create foreign keys |
+
+The script, run in the database from the portal's Query editor, signed in with Entra:
+
+```sql
+CREATE USER [id-scanner] FROM EXTERNAL PROVIDER WITH OBJECT_ID = 'fce27e24-9ffa-40e2-a01e-06415f765586';
+ALTER ROLE db_datareader ADD MEMBER [id-scanner];
+ALTER ROLE db_datawriter ADD MEMBER [id-scanner];
+CREATE USER [id-dashboard] FROM EXTERNAL PROVIDER WITH OBJECT_ID = '8c4068b3-51a9-4c54-b95f-356b9ef4a894';
+ALTER ROLE db_datareader ADD MEMBER [id-dashboard];
+ALTER ROLE db_datawriter ADD MEMBER [id-dashboard];
+CREATE USER [id-pipeline] FROM EXTERNAL PROVIDER WITH OBJECT_ID = 'f7ab4ce3-509a-471d-8233-79987139e26e';
+ALTER ROLE db_ddladmin ADD MEMBER [id-pipeline];
+ALTER ROLE db_datareader ADD MEMBER [id-pipeline];
+ALTER ROLE db_datawriter ADD MEMBER [id-pipeline];
+GRANT REFERENCES ON SCHEMA::dbo TO [id-pipeline];
+```
+
+To see who has what, the users with their roles, then their other permissions:
+
+```sql
+SELECT u.name AS [user], u.type_desc, r.name AS [role]
+FROM sys.database_principals AS u
+LEFT JOIN sys.database_role_members AS m ON m.member_principal_id = u.principal_id
+LEFT JOIN sys.database_principals AS r ON r.principal_id = m.role_principal_id
+WHERE u.type IN ('E', 'X')
+ORDER BY u.name, r.name;
+
+SELECT USER_NAME(p.grantee_principal_id) AS [user], p.permission_name, p.class_desc
+FROM sys.database_permissions AS p
+WHERE p.grantee_principal_id IN (SELECT principal_id FROM sys.database_principals WHERE type IN ('E', 'X'));
+```
+
+To rebuild the database, as on 2026-10-19:
+
+1. Delete it, then create it again, empty, with the same settings:
+
+   ```bash
+   az sql db delete --resource-group RepoAnalysis-dev --server sql-reposcanner-dev --name RepoScanner --yes
+   ```
+
+   ```bash
+   az sql db create --resource-group RepoAnalysis-dev --server sql-reposcanner-dev --name RepoScanner --service-objective Basic --backup-storage-redundancy Local
+   ```
+
+2. Run the script above in the new database.
+3. Run the pipeline. Its Migrate stage builds every table.
+
+A deleted database can be restored from the server's Deleted databases page for 7 days.
 
 ## Scan a local folder
 
@@ -385,6 +443,69 @@ On top of the runtime, the image adds git and its packages (79 MB unpacked) and 
 | With nothing changed | 2 s |
 
 The project files are copied and restored before the code, so the restore step stays `CACHED` until something copied before it changes: a `.csproj`, `Directory.Packages.props` (the package versions), `Directory.Build.props`, `global.json` or `.editorconfig`. A change to the code alone never re-runs it. Installing git is `CACHED` until the runtime image changes.
+
+## Deployment
+
+The scanner and the dashboard are deployed to the dev environment, the resource group `RepoAnalysis-dev` in UK West, by this repository's pipeline, [azure-pipelines.yml](azure-pipelines.yml) ([ADR-030](docs/adr/ADR-030-deploy-to-a-dev-environment-through-azure-pipelines.md)). The enqueuer has its own pipeline in its own repository. Every setting, and the reason for it, is in the [pipelines design](docs/design/2026-10-19-build-and-deployment-pipelines.md).
+
+What a merge into `develop`, here or in the Dashboard repository, does:
+
+1. The pipeline checks out this repository and the Dashboard repository's `develop`.
+2. **Build:** both apps are restored, built and tested on a Microsoft-hosted Linux agent, each with its 80% line coverage gate. The scanner's job also writes the migration script; the dashboard's zips the app.
+3. **Image:** the scanner's image is pushed to `enqreposcannerdev` as `reposcanner:<build ID>`, never `latest` ([ADR-005](docs/adr/ADR-005-immutable-image-tags.md)).
+4. **Migrate:** the migration script is applied to Azure SQL as `id-pipeline`. If it fails, nothing is deployed ([Who applies migrations](#who-applies-migrations)).
+5. **Deploy the scanner:** `deploy/Deploy-ScannerJob.ps1` creates `job-scanner-nightly-dev` and `job-scanner-ondemand-dev` if they are missing, or updates them to the new image and puts every setting back.
+6. **Deploy the dashboard:** `deploy/Deploy-Dashboard.ps1` checks Easy Auth is on, puts the web app's settings back, starts it if it is stopped and deploys the zip.
+
+A change only to `docs` or to Markdown files runs nothing. A pull request into `develop` or `main` runs the Build stage only. The pipeline signs in through the service connection `sc-reposcanner-dev` as `id-pipeline`, so Azure DevOps holds no secret ([ADR-007](docs/adr/ADR-007-managed-identity-throughout.md)).
+
+### The scanner's jobs
+
+Both run in the Container Apps environment `code-reposcanner-dev` as `id-scanner`, which also pulls their image and reads the PAT from Key Vault ([ADR-014](docs/adr/ADR-014-two-runtime-identities.md)).
+
+| Setting | `job-scanner-nightly-dev` | `job-scanner-ondemand-dev` |
+|---|---|---|
+| Started by | A message on `scan-nightly`, read as `id-scanner` | A message on `scan-ondemand`, the same |
+| Executions | At most one at a time ([ADR-012](docs/adr/ADR-012-maxexecutions-1-raised-on-evidence.md)), the queue checked every 30 seconds | The same |
+| Timeout | 3,600 seconds, above the 60-minute `Scanner:Execution:MaxRunDurationMinutes` | The same |
+| Retries | None: a failed message is retried by the queue, then poisoned ([ADR-013](docs/adr/ADR-013-delete-after-upsert-poison-queue-after-three-failures.md)) | The same |
+| CPU and memory | 1 vCPU, 2 GiB | The same |
+| `Scanner__Queue__Name` | `scan-nightly` | `scan-ondemand` |
+
+Both also have `AZURE_CLIENT_ID` (`id-scanner`'s client ID), `Scanner__Queue__ServiceUri` (`https://strreposcannerdev.queue.core.windows.net`), `Scanner__AzureDevOps__OrganizationUrl`, `Scanner__AzureDevOps__Pat` as a Key Vault reference that names no version, so a renewed PAT is picked up without a deployment, and `Scanner__Database__ConnectionString` signing in as `id-scanner`. Every other setting keeps its Production default.
+
+The jobs are changed only by the pipeline. To roll back, run the deploy stages of an earlier run again: each deploys its own image. The schema is not rolled back, which expand/contract allows for ([ADR-006](docs/adr/ADR-006-migrations-applied-by-the-pipeline.md)).
+
+To start one execution by hand, for example to scan what is waiting on a queue without waiting for the next check:
+
+```bash
+az containerapp job start --name job-scanner-ondemand-dev --resource-group RepoAnalysis-dev
+```
+
+### The dashboard
+
+The web app `app-reposcanner-dashboard-dev` runs on the App Service plan `dashboard-plan-dev` (Linux B1) as `id-dashboard` ([ADR-003](docs/adr/ADR-003-app-service-linux-for-the-blazor-dashboard.md)). The pipeline deploys it after the scanner, so the migration it needs is always there first. `deploy/Deploy-Dashboard.ps1` deploys nothing unless Easy Auth is set up as below, then puts these settings back on every run, so a change made in the portal does not last:
+
+| Setting | Value |
+|---|---|
+| WebSockets, Always On, ARR affinity | On |
+| HTTPS only, FTPS, minimum TLS | On, disabled, 1.2 |
+| Startup command | `dotnet Dashboard.dll` |
+| `AZURE_CLIENT_ID` | `id-dashboard`'s client ID |
+| `Dashboard__Database__ConnectionString` | `RepoScanner` on `sql-reposcanner-dev`, signing in as `id-dashboard` |
+| `Dashboard__Queue__ServiceUri` | `https://strreposcannerdev.queue.core.windows.net` |
+
+It sets those app settings and deletes none, since Easy Auth's set-up adds its own.
+
+### Easy Auth (once, by hand)
+
+Turning Easy Auth on creates an app registration, which the pipeline's identity cannot do, so it is done by hand, once, before the first deployment. It signs in anyone in the Blacklight tenant, and uses `id-dashboard` as a federated credential, so there is no client secret to store or renew ([ADR-007](docs/adr/ADR-007-managed-identity-throughout.md)).
+
+1. In the web app, **Authentication**, **Add identity provider**, **Microsoft**: create a new app registration named `app-reposcanner-dashboard-dev`, for the current tenant only, requiring authentication, with an HTTP 302 redirect for requests that are not signed in.
+2. In the Entra admin centre, open that app registration, **Certificates & secrets**, **Federated credentials**, **Add credential**: the managed identity scenario, `id-dashboard`, named `id-dashboard-easy-auth`, with the issuer, subject and audience the portal fills in.
+3. In the web app, **Environment variables**: add `OVERRIDE_USE_MI_FIC_ASSERTION_CLIENTID` with `id-dashboard`'s client ID.
+4. In the web app, **Authentication**, edit the Microsoft provider: set **Client secret setting name** to `OVERRIDE_USE_MI_FIC_ASSERTION_CLIENTID`.
+5. Once a sign-in works, delete the app setting `MICROSOFT_PROVIDER_AUTHENTICATION_SECRET` and the client secret in the app registration, then sign in again in a new private window.
 
 ## Logs
 

@@ -18,3 +18,5 @@ No password or connection string exists anywhere in configuration, DevOps variab
 ## Amendments
 
 **2026-10-04 (Issue 11, ADR-029):** this release has no pipeline, so nothing signs in with Workload Identity Federation, and the managed identities and Key Vault wait for the Azure deployment. Locally, the PAT is a user environment variable and the container's copy is in the git-ignored `.env` file (ADR-017). The decision is otherwise unchanged.
+
+**2026-10-19 (Issue 12, ADR-030):** ADR-030 supersedes ADR-029, so the 2026-10-04 amendment above no longer applies. The pipelines sign in through Workload Identity Federation as `id-pipeline`, a user-assigned managed identity, and the dashboard's Easy Auth uses `id-dashboard` as a federated credential, with no client secret. The decision is otherwise unchanged.

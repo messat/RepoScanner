@@ -179,11 +179,13 @@ namespace RepoScanner.Scanner.Tests.CodePatterns
         }
 
         // On other deep code Roslyn's parser stops by itself and returns an empty tree with error CS8078, so the
-        // rules would find nothing there without saying so
+        // rules would find nothing there without saying so. Where it stops depends on the thread's stack, which is
+        // larger on Linux: 5,000 nested blocks parse there, so the test nests far deeper than either system allows
+        // (Issue 12, the pipeline's first Linux run)
         [Test]
         public async Task ScanAsync_WhenTheParserGivesUp_SkipsTheFileWithAWarning()
         {
-            string braces = string.Concat(Enumerable.Repeat("{ ", 5000)) + string.Concat(Enumerable.Repeat("} ", 5000));
+            string braces = string.Concat(Enumerable.Repeat("{ ", 100000)) + string.Concat(Enumerable.Repeat("} ", 100000));
             _folder.WriteText("blocks.cs", "class Blocks { void M() { Flag(); " + braces + "} }");
 
             IReadOnlyList<RawFinding> findings = await ScanAsync(new FlagRule("CP001"));

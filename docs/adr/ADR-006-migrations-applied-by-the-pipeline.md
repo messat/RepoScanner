@@ -18,3 +18,5 @@ Database.Migrate() at startup was rejected on three grounds: it requires the run
 ## Amendments
 
 **2026-10-04 (Issue 11, ADR-029):** this release has no pipeline, so migrations are applied locally with `dotnet ef database update` (README, Database and migrations). The scanner still never applies them, and destructive changes still follow expand/contract. The decision is otherwise unchanged.
+
+**2026-10-19 (Issue 12, ADR-030):** ADR-030 supersedes ADR-029, so the 2026-10-04 amendment above no longer applies. RepoScanner's pipeline applies the idempotent script to Azure SQL as `id-pipeline` before either app is deployed. The decision is otherwise unchanged.

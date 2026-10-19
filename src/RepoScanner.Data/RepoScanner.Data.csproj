@@ -5,6 +5,9 @@
   <ItemGroup>
     <!-- EF Core with the SQL Server provider: the local SQL Server and Azure SQL Database both use it -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <!-- Not used directly: lifts the System.Security.Cryptography.Pkcs that SqlClient brings in to its patched
+         release, for Data and every project that references it (see Directory.Packages.props) -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <!-- Only for the dotnet ef tool (migrations). PrivateAssets="all" stops it flowing to projects
          that reference Data, such as Scanner and the dashboard -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">

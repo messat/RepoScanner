@@ -1,0 +1,303 @@
+# RepoScanner's pipeline, for the scanner and the dashboard (scanner Issue 12, #72; dashboard Issue 7, #99;
+# docs/design/2026-10-19-build-and-deployment-pipelines.md).
+#
+# One pipeline for both apps, as Steven Wilson asked (decision 5): every merge into develop, in this repository or in
+# the Dashboard repository, builds and tests both apps, then deploys the scanner and, after it, the dashboard. The
+# enqueuer has its own pipeline in its own repository. A change only to documentation does not run it (decision 8).
+# Pull requests into develop and main, in either repository, run the Build stage only, through a build validation
+# policy in each repository: Azure Repos ignores a pr: section in a YAML file, so there is none here (decision 8).
+# Every stage runs on a Microsoft-hosted Linux agent, the same OS as the scanner's container (decision 7).
+
+trigger:
+  branches:
+    include:
+      - develop
+  paths:
+    exclude:
+      - docs
+      - '**/*.md'
+
+resources:
+  repositories:
+    # The dashboard's code, checked out from its own repository rather than copied here (decision 6). A merge into its
+    # develop starts this pipeline too, with this repository's develop and the Dashboard commit that started it.
+    - repository: dashboard
+      type: git
+      name: Lumina/Dashboard
+      ref: refs/heads/develop
+      trigger:
+        branches:
+          include:
+            - develop
+        paths:
+          exclude:
+            - docs
+            - '**/*.md'
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # The Workload Identity Federation connection, signed in as id-pipeline, so Azure DevOps holds no secret (decision 19)
+  serviceConnection: sc-reposcanner-dev
+  # The shared registry and the scanner's image. The tag is always the build ID, never latest (decision 11)
+  registry: enqreposcannerdev
+  image: reposcanner
+
+stages:
+  # Both apps are built and tested before anything reaches Azure, so a broken dashboard never leaves half a release
+  # (decision 9)
+  - stage: Build
+    displayName: Build and test
+    jobs:
+      - job: Scanner
+        displayName: Build and test the scanner
+        steps:
+          - checkout: self
+
+          - task: UseDotNet@2
+            displayName: Install the SDK named in global.json
+            inputs:
+              packageType: sdk
+              useGlobalJson: true
+
+          - script: dotnet restore RepoScanner.sln
+            displayName: Restore
+
+          - script: dotnet build RepoScanner.sln --configuration Release --no-restore
+            displayName: Build
+
+          # The 80% line coverage gate on Core and Scanner is in Directory.Build.props, so a drop below it fails this
+          # step, as it does locally (decision 10)
+          - script: dotnet test RepoScanner.sln --configuration Release --no-build --logger trx --results-directory $(Agent.TempDirectory)/TestResults
+            displayName: Test, with the coverage gate
+
+          - script: dotnet tool restore
+            displayName: Restore dotnet-ef
+
+          # The idempotent script the Migrate stage applies (decision 12), kept as an artifact so what was applied can be
+          # read afterwards. ScannerDbContextFactory needs a connection string to build the context; writing the script
+          # never connects, and the string holds no secret (decision 10).
+          - script: dotnet ef migrations script --idempotent --project src/RepoScanner.Data --startup-project src/RepoScanner.Data --configuration Release --no-build --output $(Build.ArtifactStagingDirectory)/migrate/migrate.sql
+            displayName: Write the migration script
+            env:
+              Scanner__Database__ConnectionString: Server=tcp:sql-reposcanner-dev.database.windows.net,1433;Database=RepoScanner;Authentication=Active Directory Default;Encrypt=True
+
+          - task: PublishTestResults@2
+            displayName: Publish the test results
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/TestResults/*.trx'
+              testRunTitle: RepoScanner
+
+          - task: PublishCodeCoverageResults@2
+            displayName: Publish the coverage report
+            condition: succeededOrFailed()
+            inputs:
+              summaryFileLocation: '$(Build.SourcesDirectory)/tests/**/TestResults/coverage/coverage.cobertura.xml'
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish the migration script
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/migrate
+              artifact: migrate
+
+      - job: Dashboard
+        displayName: Build and test the dashboard
+        # After the scanner's job, in Steven Wilson's order (decision 9)
+        dependsOn: Scanner
+        steps:
+          - checkout: dashboard
+
+          - task: UseDotNet@2
+            displayName: Install the SDK named in global.json
+            inputs:
+              packageType: sdk
+              useGlobalJson: true
+
+          - script: dotnet restore Dashboard.sln
+            displayName: Restore
+
+          - script: dotnet build Dashboard.sln --configuration Release --no-restore
+            displayName: Build
+
+          # The dashboard's own 80% gate, in its Directory.Build.props (decision 10)
+          - script: dotnet test Dashboard.sln --configuration Release --no-build --logger trx --results-directory $(Agent.TempDirectory)/TestResults
+            displayName: Test, with the coverage gate
+
+          - script: dotnet publish src/Dashboard/Dashboard.csproj --configuration Release --no-build --output $(Build.ArtifactStagingDirectory)/dashboard-app
+            displayName: Publish the app
+
+          # The zip the DeployDashboard stage deploys, with Dashboard.dll at its root (decision 15)
+          - task: ArchiveFiles@2
+            displayName: Zip the app
+            inputs:
+              rootFolderOrFile: $(Build.ArtifactStagingDirectory)/dashboard-app
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/dashboard/dashboard.zip
+
+          - task: PublishTestResults@2
+            displayName: Publish the test results
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/TestResults/*.trx'
+              testRunTitle: Dashboard
+
+          - task: PublishCodeCoverageResults@2
+            displayName: Publish the coverage report
+            condition: succeededOrFailed()
+            inputs:
+              summaryFileLocation: '$(Build.SourcesDirectory)/tests/Dashboard.Tests/TestResults/coverage/coverage.cobertura.xml'
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish the dashboard's zip
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/dashboard
+              artifact: dashboard
+
+  - stage: Image
+    displayName: Build and push the scanner's image
+    dependsOn: Build
+    # Only a merge into develop reaches Azure: a pull request, or a run of any other branch, stops after Build (decision 9)
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: Image
+        steps:
+          - task: AzureCLI@2
+            displayName: Push $(image):$(Build.BuildId) to $(registry)
+            inputs:
+              azureSubscription: ${{ variables.serviceConnection }}
+              scriptType: pscore
+              scriptLocation: inlineScript
+              # Any failed command fails the step, rather than the script carrying on to the next one
+              inlineScript: |
+                $ErrorActionPreference = 'Stop'
+                $PSNativeCommandUseErrorActionPreference = $true
+                az acr login --name $(registry)
+                docker build --tag $(registry).azurecr.io/$(image):$(Build.BuildId) .
+                docker push $(registry).azurecr.io/$(image):$(Build.BuildId)
+
+  # The schema is changed here and only here, as id-pipeline, before either app is deployed; if it fails, nothing is
+  # deployed (decision 12, ADR-006, ADR-008). The script is idempotent: the first run built every table in the empty
+  # database, and a later run applies only the migrations it has not seen.
+  - stage: Migrate
+    displayName: Apply the migrations to Azure SQL
+    dependsOn: Image
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: Migrate
+        steps:
+          - checkout: none
+
+          - download: current
+            artifact: migrate
+
+          - task: AzureCLI@2
+            displayName: Apply migrate.sql to RepoScanner as id-pipeline
+            inputs:
+              azureSubscription: ${{ variables.serviceConnection }}
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $ErrorActionPreference = 'Stop'
+                $PSNativeCommandUseErrorActionPreference = $true
+
+                # go-sqlcmd, which signs in with this task's Azure CLI session as id-pipeline: no password and no SQL
+                # login (decision 12). Microsoft's Ubuntu 24.04 repository, which ubuntu-latest uses, has no sqlcmd
+                # package, so one release is downloaded from Microsoft's GitHub releases and run only if its SHA-256
+                # is the one pinned here (final review). To move to a newer release, change both lines.
+                $sqlcmdVersion = 'v1.10.0'
+                $sqlcmdSha256 = '92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987'
+                $archive = '$(Agent.TempDirectory)/sqlcmd-linux-amd64.tar.bz2'
+                curl -fsSL -o $archive "https://github.com/microsoft/go-sqlcmd/releases/download/$sqlcmdVersion/sqlcmd-linux-amd64.tar.bz2"
+                $hash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($hash -ne $sqlcmdSha256) {
+                    throw "sqlcmd-linux-amd64.tar.bz2 $sqlcmdVersion has SHA-256 $hash, not the pinned $sqlcmdSha256, so it was not run"
+                }
+                $sqlcmdFolder = '$(Agent.TempDirectory)/go-sqlcmd'
+                New-Item -ItemType Directory -Path $sqlcmdFolder -Force | Out-Null
+                tar -xjf $archive -C $sqlcmdFolder
+                $sqlcmd = Join-Path $sqlcmdFolder 'sqlcmd'
+                & $sqlcmd --version
+
+                $server = 'tcp:sql-reposcanner-dev.database.windows.net,1433'
+
+                # Who it signed in as, before anything is applied, so the log shows the schema is changed only by
+                # id-pipeline (ADR-008)
+                & $sqlcmd -S $server -d RepoScanner --authentication-method ActiveDirectoryDefault -N mandatory -l 30 -b -Q "SET NOCOUNT ON; SELECT SUSER_SNAME() AS SignedInAs"
+
+                # dotnet ef writes the script with a UTF-8 byte order mark; written again without one, so the first
+                # batch cannot start with a stray character
+                $script = '$(Pipeline.Workspace)/migrate/migrate.sql'
+                Set-Content -Path $script -Value (Get-Content -Path $script -Raw) -Encoding utf8NoBOM -NoNewline
+
+                # -N mandatory checks the server's certificate; -b stops at the first failed batch, failing the stage
+                & $sqlcmd -S $server -d RepoScanner --authentication-method ActiveDirectoryDefault -N mandatory -l 30 -b -i $script
+
+  - stage: DeployScanner
+    displayName: Deploy the scanner's two jobs
+    dependsOn: Migrate
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      # A deployment job, so the reposcanner-dev environment lists what was deployed when, by which run (decision 21).
+      # Re-running this stage on an earlier run deploys that run's image again: that is how to roll back.
+      - deployment: DeployScanner
+        environment: reposcanner-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                # Neither artifact is needed here, and a deployment job does not check out the repository by itself
+                - download: none
+                - checkout: self
+
+                # Each creates its job if it is missing, otherwise updates it to this build's image and puts every
+                # setting back, so the jobs are changed only here (decision 13)
+                - task: AzureCLI@2
+                  displayName: Create or update job-scanner-nightly-dev
+                  inputs:
+                    azureSubscription: ${{ variables.serviceConnection }}
+                    scriptType: pscore
+                    scriptLocation: scriptPath
+                    scriptPath: deploy/Deploy-ScannerJob.ps1
+                    arguments: -Lane nightly -Image $(registry).azurecr.io/$(image):$(Build.BuildId)
+
+                - task: AzureCLI@2
+                  displayName: Create or update job-scanner-ondemand-dev
+                  inputs:
+                    azureSubscription: ${{ variables.serviceConnection }}
+                    scriptType: pscore
+                    scriptLocation: scriptPath
+                    scriptPath: deploy/Deploy-ScannerJob.ps1
+                    arguments: -Lane ondemand -Image $(registry).azurecr.io/$(image):$(Build.BuildId)
+
+  # After the scanner, in Steven Wilson's order: the dashboard stops at start-up if the newest migration is missing,
+  # so it is deployed only once Migrate has run in the same run (decision 5)
+  - stage: DeployDashboard
+    displayName: Deploy the dashboard
+    dependsOn: DeployScanner
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - deployment: DeployDashboard
+        environment: reposcanner-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: dashboard
+                - checkout: self
+
+                # Deploys nothing unless Easy Auth is on and signs in through id-dashboard, then puts the web app's
+                # settings back and deploys this run's zip (decisions 15 and 16)
+                - task: AzureCLI@2
+                  displayName: Deploy app-reposcanner-dashboard-dev
+                  inputs:
+                    azureSubscription: ${{ variables.serviceConnection }}
+                    scriptType: pscore
+                    scriptLocation: scriptPath
+                    scriptPath: deploy/Deploy-Dashboard.ps1
+                    arguments: -Package $(Pipeline.Workspace)/dashboard/dashboard.zip

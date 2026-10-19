@@ -18,3 +18,5 @@ Every running job traces to an exact build and commit; rollback is redeploying a
 ## Amendments
 
 **2026-10-04 (Issue 11, ADR-029):** this release has no pipeline, so there is no build ID to tag with. The scanner image is built and tagged by hand, `reposcanner:v1` (Issue 9), and is never pushed to a registry. The decision is otherwise unchanged.
+
+**2026-10-19 (Issue 12, ADR-030):** ADR-030 supersedes ADR-029, so the 2026-10-04 amendment above no longer applies. Images are tagged `$(Build.BuildId)` by RepoScanner's pipeline and the enqueuer's. The decision is otherwise unchanged.
